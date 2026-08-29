@@ -171,6 +171,22 @@
                          :values)
                    '("NIL"))
             "separate workers do not share heap state")
+           (test-assert
+            (eq (getf (rest (sbcl-worker-request
+                             alpha
+                             :load-system
+                             '(:system :sbcl-workers/read-eval-fixture)))
+                      :status)
+                :ok)
+            "request execution permits standard reader evaluation")
+           (test-assert
+            (equal (getf (rest (sbcl-worker-request
+                                alpha
+                                :eval
+                                '(:form "cl-user::*sbcl-worker-reader-evaluated-value*")))
+                         :values)
+                   '("42"))
+            "reader evaluation computes dependency source forms")
            (test-assert (search "alpha  running  image pristine"
                                 (sbcl-worker-pool-render pool))
                         "the pool reports worker state and image identity")

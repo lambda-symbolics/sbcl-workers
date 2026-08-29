@@ -29,3 +29,8 @@
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call '#:sbcl-workers/tests '#:run-tests)))
+
+
+(asdf:defsystem #:sbcl-workers/read-eval-fixture
+  :description "Fixture containing standard reader evaluation syntax"
+  :components ((:file "tests/read-eval-fixture")))

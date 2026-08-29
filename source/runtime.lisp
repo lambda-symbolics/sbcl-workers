@@ -186,7 +186,6 @@
    :protocol-version protocol-version
    :source-root-environment-variable source-root-environment-variable)
   (let ((*package* (worker--evaluation-package))
-        (*read-eval* nil)
         (*print-readably* t)
         (*print-circle* t))
     (prin1 (list *worker-protocol-tag*
@@ -194,7 +193,8 @@
                  :image *worker-image-identifier*))
     (terpri)
     (finish-output)
-    (loop for request = (read *standard-input* nil :end)
+    (loop for request = (let ((*read-eval* nil))
+                          (read *standard-input* nil :end))
           until (eq request :end)
           do (let ((response
                      (if (and (listp request) (eq (first request) :request))
