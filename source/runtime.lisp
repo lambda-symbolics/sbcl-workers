@@ -104,15 +104,19 @@
              :pathname pathname)))))
   (values (list (namestring pathname)) ""))
 
-(defun worker--system-source-pathname (system)
-  "Return SYSTEM's canonical ASDF definition pathname or signal a worker error."
+(defun worker--system-source-pathname (system &optional required-p)
+  "Return SYSTEM's canonical ASDF definition pathname when it has one."
   (let* ((definition (asdf:find-system system nil))
          (source (and definition (asdf:system-source-file definition))))
-    (unless source
-      (worker--signal-error
-       (format nil "ASDF system ~A has no source definition." system)
-       :operation :load-system))
-    (truename source)))
+    (cond
+      (source
+       (truename source))
+      (required-p
+       (worker--signal-error
+        (format nil "ASDF system ~A has no source definition." system)
+        :operation :load-system))
+      (t
+       nil))))
 
 (defun worker--load-system-definition (system asd-pathname)
   "Replace SYSTEM's registered definition with exact ASD-PATHNAME."
@@ -123,7 +127,7 @@
   (let ((expected (truename (pathname asd-pathname))))
     (asdf:clear-system system)
     (asdf:load-asd expected)
-    (let ((actual (worker--system-source-pathname system)))
+    (let ((actual (worker--system-source-pathname system t)))
       (unless (uiop:pathname-equal actual expected)
         (worker--signal-error
          (format nil
@@ -142,14 +146,16 @@
       (if (find-package '#:ql)
           (uiop:symbol-call '#:ql '#:quickload system)
           (asdf:load-system system)))
-  (namestring (worker--system-source-pathname system)))
+  (let ((source (worker--system-source-pathname system)))
+    (and source (namestring source))))
 
 (defun worker--run-tests (system &optional asd-pathname)
   "Run SYSTEM tests, optionally replacing its registration from ASD-PATHNAME."
   (when asd-pathname
     (worker--load-system-definition system asd-pathname))
   (asdf:test-system system)
-  (namestring (worker--system-source-pathname system)))
+  (let ((source (worker--system-source-pathname system)))
+    (and source (namestring source))))
 
 (defun worker--dispatch (operation arguments)
   "Execute worker OPERATION with portable ARGUMENTS."

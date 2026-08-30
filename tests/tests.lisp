@@ -125,6 +125,12 @@
                  "the runtime serializes evaluation conditions")
     (test-assert (stringp (getf (rest failure) :backtrace))
                  "runtime failures include a portable backtrace")))
+  (let ((response
+          (sbcl-worker-handle-request
+           '(:request :id 3 :operation :load-system :arguments (:system :asdf)))))
+    (test-assert
+     (eq (getf (rest response) :status) :ok)
+     "systems without standalone ASD source files still load successfully"))
 
   (let* ((root (test-root))
          (old-asd
@@ -143,7 +149,7 @@
            (let ((response
                    (sbcl-worker-handle-request
                     (list :request
-                          :id 3
+                          :id 4
                           :operation :load-system
                           :arguments
                           (list :system :sbcl-workers-source-audit
@@ -160,7 +166,7 @@
            (let ((response
                    (sbcl-worker-handle-request
                     (list :request
-                          :id 4
+                          :id 5
                           :operation :run-tests
                           :arguments
                           (list :system :sbcl-workers-source-audit
