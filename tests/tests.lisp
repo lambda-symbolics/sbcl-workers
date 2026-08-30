@@ -19,12 +19,17 @@
 
 (defun test-pristine-command ()
   "Return an argv list that boots this checkout's worker runtime."
-  (let ((asd (asdf:system-source-file :sbcl-workers)))
+  (let* ((asd (asdf:system-source-file :sbcl-workers))
+         (root (uiop:pathname-directory-pathname asd)))
     (list "sbcl"
           "--noinform"
           "--non-interactive"
           "--eval"
           "(require :asdf)"
+          "--eval"
+          (format nil
+                  "(asdf:initialize-source-registry '(:source-registry (:directory #P~S) :inherit-configuration))"
+                  (namestring root))
           "--eval"
           (format nil "(asdf:load-asd #P~S)" (namestring asd))
           "--eval"
@@ -52,6 +57,31 @@
     (file-position stream +minimum-sbcl-worker-core-size+)
     (write-byte 0 stream))
   pathname)
+
+(defun test-write-text (pathname content)
+  "Replace PATHNAME with exact UTF-8 CONTENT."
+  (ensure-directories-exist pathname)
+  (with-open-file (stream pathname
+                          :direction :output
+                          :if-exists :supersede
+                          :if-does-not-exist :create
+                          :external-format :utf-8)
+    (write-string content stream))
+  pathname)
+
+(defun test-write-source-audit-system (directory marker)
+  "Write a source-audit ASDF system beneath DIRECTORY using MARKER."
+  (let ((asd (merge-pathnames "sbcl-workers-source-audit.asd" directory)))
+    (test-write-text
+     asd
+     (format nil
+             "(asdf:defsystem #:sbcl-workers-source-audit~%  :serial t~%  :components ((:file \"source\")))~%"))
+    (test-write-text
+     (merge-pathnames "source.lisp" directory)
+     (format nil
+             "(defparameter cl-user::*sbcl-workers-source-audit* ~S)~%"
+             marker))
+    asd))
 
 (defun test-worker-names ()
   "Test the public worker-name predicate and structured validation failure."
@@ -95,6 +125,57 @@
                  "the runtime serializes evaluation conditions")
     (test-assert (stringp (getf (rest failure) :backtrace))
                  "runtime failures include a portable backtrace")))
+
+  (let* ((root (test-root))
+         (old-asd
+           (test-write-source-audit-system
+            (merge-pathnames "old/" root) :old))
+         (new-asd
+           (test-write-source-audit-system
+            (merge-pathnames "new/" root) :new)))
+    (unwind-protect
+         (progn
+           (asdf:load-asd old-asd)
+           (asdf:load-system :sbcl-workers-source-audit)
+           (test-assert
+            (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :old)
+            "the audit fixture starts from its first registered definition")
+           (let ((response
+                   (sbcl-worker-handle-request
+                    (list :request
+                          :id 3
+                          :operation :load-system
+                          :arguments
+                          (list :system :sbcl-workers-source-audit
+                                :asd-pathname (namestring new-asd))))))
+             (test-assert
+              (and (eq (getf (rest response) :status) :ok)
+                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                   (search (namestring (truename new-asd))
+                           (first (getf (rest response) :values))))
+              "load-system replaces a stale registered system from an exact ASD file"))
+           (asdf:clear-system :sbcl-workers-source-audit)
+           (asdf:load-asd old-asd)
+           (asdf:load-system :sbcl-workers-source-audit)
+           (let ((response
+                   (sbcl-worker-handle-request
+                    (list :request
+                          :id 4
+                          :operation :run-tests
+                          :arguments
+                          (list :system :sbcl-workers-source-audit
+                                :asd-pathname (namestring new-asd))))))
+             (test-assert
+              (and (eq (getf (rest response) :status) :ok)
+                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                   (search (namestring (truename new-asd))
+                           (first (getf (rest response) :values))))
+              "run-tests replaces a stale registered system from an exact ASD file"))
+      (asdf:clear-system :sbcl-workers-source-audit)
+      (when (boundp 'cl-user::*sbcl-workers-source-audit*)
+        (makunbound 'cl-user::*sbcl-workers-source-audit*))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+  nil)
 
 (defun test-images ()
   "Test immutable manifests, compatibility, scans, and structured errors."
@@ -282,7 +363,7 @@
                       (serious-condition ()
                         nil)))
                   :name "SBCL worker cancellation test"))
-           (loop repeat 100
+           (loop repeat 300
                  until (probe-file marker)
                  do (sleep 0.05))
            (test-assert (probe-file marker)

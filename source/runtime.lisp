@@ -104,11 +104,52 @@
              :pathname pathname)))))
   (values (list (namestring pathname)) ""))
 
-(defun worker--load-system (system)
-  "Load SYSTEM with Quicklisp when present, otherwise through ASDF."
-  (if (find-package '#:ql)
-      (uiop:symbol-call '#:ql '#:quickload system)
-      (asdf:load-system system)))
+(defun worker--system-source-pathname (system)
+  "Return SYSTEM's canonical ASDF definition pathname or signal a worker error."
+  (let* ((definition (asdf:find-system system nil))
+         (source (and definition (asdf:system-source-file definition))))
+    (unless source
+      (worker--signal-error
+       (format nil "ASDF system ~A has no source definition." system)
+       :operation :load-system))
+    (truename source)))
+
+(defun worker--load-system-definition (system asd-pathname)
+  "Replace SYSTEM's registered definition with exact ASD-PATHNAME."
+  (unless (worker--non-empty-string-p asd-pathname)
+    (worker--signal-error
+     "An exact ASDF definition path must be a non-empty string."
+     :operation :load-system))
+  (let ((expected (truename (pathname asd-pathname))))
+    (asdf:clear-system system)
+    (asdf:load-asd expected)
+    (let ((actual (worker--system-source-pathname system)))
+      (unless (uiop:pathname-equal actual expected)
+        (worker--signal-error
+         (format nil
+                 "ASDF resolved system ~A from ~A instead of requested ~A."
+                 system actual expected)
+         :operation :load-system
+         :pathname expected))
+      actual)))
+
+(defun worker--load-system (system &optional asd-pathname)
+  "Load SYSTEM, optionally replacing its registration from exact ASD-PATHNAME."
+  (if asd-pathname
+      (progn
+        (worker--load-system-definition system asd-pathname)
+        (asdf:load-system system))
+      (if (find-package '#:ql)
+          (uiop:symbol-call '#:ql '#:quickload system)
+          (asdf:load-system system)))
+  (namestring (worker--system-source-pathname system)))
+
+(defun worker--run-tests (system &optional asd-pathname)
+  "Run SYSTEM tests, optionally replacing its registration from ASD-PATHNAME."
+  (when asd-pathname
+    (worker--load-system-definition system asd-pathname))
+  (asdf:test-system system)
+  (namestring (worker--system-source-pathname system)))
 
 (defun worker--dispatch (operation arguments)
   "Execute worker OPERATION with portable ARGUMENTS."
@@ -130,7 +171,8 @@
     (:load-system
      (worker--capture-evaluation
       (lambda ()
-        (worker--load-system (getf arguments :system)))))
+        (worker--load-system (getf arguments :system)
+                             (getf arguments :asd-pathname)))))
     (:describe
      (worker--capture-evaluation
       (lambda ()
@@ -142,7 +184,8 @@
     (:run-tests
      (worker--capture-evaluation
       (lambda ()
-        (asdf:test-system (getf arguments :system)))))))
+        (worker--run-tests (getf arguments :system)
+                           (getf arguments :asd-pathname)))))))
 
 (defun worker--condition-backtrace ()
   "Return a bounded SBCL backtrace for the current worker condition."
