@@ -30,13 +30,20 @@
       form)))
 
 (defun worker--bounded-string (value &key (limit 12000))
-  "Return VALUE as a string no longer than LIMIT characters."
+  "Return VALUE as a string bounded near LIMIT characters.
+
+Both ends of a long value usually carry the signal: a backtrace leads
+with the condition, evaluation output ends with the conclusion. The
+bound keeps the head and the tail and names the dropped middle."
   (let ((string (if (stringp value) value (princ-to-string value))))
     (if (<= (length string) limit)
         string
-        (format nil "~A~%[truncated ~D characters]"
-                (subseq string 0 limit)
-                (- (length string) limit)))))
+        (let ((head (ceiling limit 2))
+              (tail (floor limit 2)))
+          (format nil "~A~%[... ~D characters dropped ...]~%~A"
+                  (subseq string 0 head)
+                  (- (length string) limit)
+                  (subseq string (- (length string) tail)))))))
 
 (defparameter +worker-source-kinds+
   '(:class :compiler-macro :condition :constant :function :generic-function
