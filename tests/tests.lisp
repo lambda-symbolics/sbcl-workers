@@ -432,11 +432,29 @@
       (sbcl-worker-pool-stop-all pool)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
 
+(defun test-output-bounds ()
+  "Test long evaluation output keeps its head and tail around a marker."
+  (let* ((response
+           (sbcl-worker-handle-request
+            '(:request :id 4 :operation :eval
+              :arguments
+              (:form "(progn (dotimes (i 4000) (format t \"line-~4,'0D~%\" i)) :done)"))))
+         (output (getf (rest response) :output)))
+    (test-assert (eq (getf (rest response) :status) :ok)
+                 "the long-output evaluation succeeds")
+    (test-assert (<= (length output) 13000)
+                 "captured output is bounded near the configured limit")
+    (test-assert (and (search "line-0000" output)
+                      (search "line-3999" output)
+                      (search "characters dropped" output))
+                 "bounded output keeps its head and tail around the marker")))
+
 (defun run-tests ()
   "Run the complete sbcl-workers test suite and return true."
   (setf *tests-run* 0)
   (test-worker-names)
   (test-runtime)
+  (test-output-bounds)
   (test-images)
   (test-pool)
   (test-worker-request-cancellation)

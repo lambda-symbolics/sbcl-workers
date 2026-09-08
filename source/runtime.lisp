@@ -43,8 +43,11 @@
                     :level 10
                     :length 100)))
 
+(defparameter *worker-output-character-limit* 12000
+  "The most captured output characters one worker response carries.")
+
 (defun worker--capture-evaluation (function)
-  "Call FUNCTION while capturing output, returning values and output."
+  "Call FUNCTION while capturing output, returning values and bounded output."
   (let ((result-values nil))
     (let ((output
             (with-output-to-string (stream)
@@ -55,7 +58,10 @@
                     (*package* (worker--evaluation-package)))
                 (setf result-values
                       (multiple-value-list (funcall function)))))))
-      (values (mapcar #'sbcl-worker-render-value result-values) output))))
+      (values (mapcar #'sbcl-worker-render-value result-values)
+              (worker--bounded-string
+               output
+               :limit *worker-output-character-limit*)))))
 
 (defun worker--single-threaded-p ()
   "Return true when the worker has no live Lisp thread besides this one."
