@@ -14,12 +14,14 @@
    (image-identifier
     :initarg :image-identifier
     :reader sbcl-worker-used-image-identifier
+    :accessor worker--image-identifier
     :type string
     :documentation "The pristine or saved image used at process start.")
    (core-pathname
     :initarg :core-pathname
     :initform nil
     :reader sbcl-worker-core-pathname
+    :accessor worker--core-pathname
     :type (or null pathname)
     :documentation "The compatible saved core, or NIL for a pristine worker.")
    (process
@@ -505,17 +507,51 @@ old process reaping or stream cleanup."
               :operation :save-image
               :pathname core
               :stage :save))
-           (worker--probe-core environment identifier core)
-           (worker-image--publish-saved-core
-            environment
-            :identifier identifier
-            :parent-identifier (sbcl-worker-used-image-identifier worker)
-            :note note
-            :staging-directory staging))
+           (let ((restarting-p (getf (rest response) :restarting-p)))
+             (when restarting-p
+               (worker--await-save-exit worker core))
+             (worker--probe-core environment identifier core)
+             (let ((image
+                     (worker-image--publish-saved-core
+                      environment
+                      :identifier identifier
+                      :parent-identifier (sbcl-worker-used-image-identifier worker)
+                      :note note
+                      :staging-directory staging)))
+               (when restarting-p
+                 ;; The worker exited to save its heap; it continues from
+                 ;; the image it just became, so its name stays live.
+                 (worker--adopt-image worker image)
+                 (sbcl-worker-start worker))
+               image)))
       (when (uiop:directory-exists-p staging)
         (uiop:delete-directory-tree staging
                                     :validate t
                                     :if-does-not-exist :ignore)))))
+
+(defun worker--await-save-exit (worker core)
+  "Wait for WORKER, which saves itself and exits, to leave CORE behind.
+
+Hosts without fork save an image by exiting the worker process after its
+response. The exit is the completion signal, so this reaps the process and
+requires the unpublished core to exist."
+  (let ((process (worker--process worker)))
+    (when process
+      (ignore-errors (uiop:wait-process process))))
+  (sbcl-worker-stop worker)
+  (unless (probe-file core)
+    (worker-image--signal-error
+     "The SBCL worker exited without saving its image."
+     :operation :save-image
+     :pathname core
+     :stage :save))
+  nil)
+
+(defun worker--adopt-image (worker image)
+  "Make WORKER restart from published IMAGE, whose heap it just became."
+  (setf (worker--image-identifier worker) (sbcl-worker-image-identifier image)
+        (worker--core-pathname worker) (sbcl-worker-image-core-pathname image))
+  nil)
 
 
 ;;;; -- Fork-Safe Host Checkpoints --

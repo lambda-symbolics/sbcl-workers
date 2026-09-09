@@ -10,6 +10,12 @@
 (defparameter *worker-protocol-version* 1
   "The line-protocol version emitted in this worker's handshake.")
 
+(defvar *worker-pending-save* nil
+  "A thunk saving this worker's heap after the current response, or NIL.
+
+Hosts without fork set it from WORKER--SAVE-IMAGE, and SBCL-WORKER-MAIN calls
+it once the response announcing the restart has been flushed.")
+
 (defun sbcl-worker-runtime-configure
     (&key
        (evaluation-package *worker-evaluation-package-name*)
@@ -69,46 +75,6 @@
             (and (not (eq thread sb-thread:*current-thread*))
                  (sb-thread:thread-alive-p thread)))
           (sb-thread:list-all-threads)))
-
-(defun worker--save-image-child (pathname identifier)
-  "Save this forked worker heap to PATHNAME with embedded IDENTIFIER."
-  (handler-case
-      (progn
-        (setf *worker-image-identifier* identifier)
-        (sb-ext:save-lisp-and-die
-         (namestring pathname)
-         :toplevel #'sbcl-worker-main
-         :executable nil
-         :purify nil
-         :compression nil))
-    (error ()
-      (sb-posix:_exit 1)))
-  nil)
-
-(defun worker--save-image (pathname identifier)
-  "Fork a saver for this worker heap and return portable result values."
-  (unless (worker--single-threaded-p)
-    (worker--signal-error
-     "An SBCL worker image requires exactly one live Lisp thread."
-     :operation :save-image))
-  (when (probe-file pathname)
-    (worker--signal-error
-     "The unpublished SBCL worker core already exists."
-     :operation :save-image
-     :pathname pathname))
-  (let ((saver-pid (sb-posix:fork)))
-    (if (zerop saver-pid)
-        (worker--save-image-child pathname identifier)
-        (multiple-value-bind (waited-pid status)
-            (sb-posix:waitpid saver-pid 0)
-          (unless (and (= waited-pid saver-pid)
-                       (sb-posix:wifexited status)
-                       (zerop (sb-posix:wexitstatus status)))
-            (worker--signal-error
-             "The SBCL worker image saver failed."
-             :operation :save-image
-             :pathname pathname)))))
-  (values (list (namestring pathname)) ""))
 
 (defun worker--system-source-pathname (system &optional required-p)
   "Return SYSTEM's canonical ASDF definition pathname when it has one."
@@ -214,11 +180,13 @@
     (handler-case
         (multiple-value-bind (result-values output)
             (worker--dispatch operation arguments)
-          (list :response
-                :id request-id
-                :status :ok
-                :values result-values
-                :output output))
+          (append (list :response
+                        :id request-id
+                        :status :ok
+                        :values result-values
+                        :output output)
+                  (when *worker-pending-save*
+                    (list :restarting-p t))))
       (error (condition)
         (list :response
               :id request-id
@@ -261,5 +229,12 @@
                                :backtrace ""))))
                (prin1 response)
                (terpri)
-               (finish-output))))
+               (finish-output)
+               (let ((pending *worker-pending-save*))
+                 (when pending
+                   ;; Clear it before saving: the saved heap must not carry
+                   ;; the save, or every worker restarted from it would
+                   ;; save again after its first response and exit.
+                   (setf *worker-pending-save* nil)
+                   (funcall pending))))))
   nil)

@@ -176,7 +176,7 @@
        :operation :save-image
        :pathname manifest
        :stage :publish))
-    (sb-posix:chmod (namestring expected-core) #o444)
+    (setf (ls-compat.posix:file-mode expected-core) #o444)
     (worker-image--write-manifest
      manifest
      (worker-image--manifest-form
@@ -244,7 +244,7 @@
        :stage :publish))
     (worker-image--validate-publication
      parent-identifier note staging-manifest)
-    (sb-posix:chmod (namestring staging-core) #o444)
+    (setf (ls-compat.posix:file-mode staging-core) #o444)
     (worker-image--write-manifest
      staging-manifest
      (worker-image--manifest-form
