@@ -5,6 +5,7 @@
   :version "0.1.0"
   :serial t
   :depends-on (#:bordeaux-threads
+               #:ls-compat/posix
                #:sexp-store
                #+sbcl #:sb-posix)
   :components ((:module "source"
@@ -15,6 +16,8 @@
                              (:file "images")
                              (:file "worker-source")
                              (:file "runtime")
+                             (:file "runtime-fork" :if-feature (:not :win32))
+                             (:file "runtime-restart" :if-feature :win32)
                              (:file "workers"))))
   :in-order-to ((asdf:test-op (asdf:test-op #:sbcl-workers/tests))))
 
