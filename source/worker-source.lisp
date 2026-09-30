@@ -236,8 +236,11 @@ bound keeps the head and the tail and names the dropped middle."
             (push (cons kind source-location) locations)))))
     (unless locations
       (worker--signal-error
-       (format nil "No ~:[SBCL ~;~(~A~) ~]definition source was found for ~S."
-               selected-kind selected-kind name)
+       (format nil "No ~A definition source was found for ~S."
+               (if selected-kind
+                   (string-downcase (symbol-name selected-kind))
+                   "SBCL")
+               name)
        :operation :source))
     (values
      nil

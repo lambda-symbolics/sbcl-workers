@@ -8,6 +8,7 @@
                 #:sbcl-worker-environment-context
                 #:sbcl-worker-environment-create
                 #:sbcl-worker-error
+                #:sbcl-worker-error-message
                 #:sbcl-worker-error-operation
                 #:sbcl-worker-error-stage
                 #:sbcl-worker-handle-request
@@ -32,6 +33,7 @@
                 #:sbcl-worker-request
                 #:sbcl-worker-render-value
                 #:sbcl-worker-running-p
+                #:sbcl-worker-source
                 #:sbcl-worker-save-image
                 #:sbcl-worker-stop)
   (:export #:run-tests))

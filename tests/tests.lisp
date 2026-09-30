@@ -449,9 +449,36 @@
                       (search "characters dropped" output))
                  "bounded output keeps its head and tail around the marker")))
 
+(defun test-source-not-found ()
+  "Name the requested definition when no SBCL source location matches it."
+  (let ((message
+          (handler-case
+              (progn
+                (sbcl-worker-source "cl-user::sbcl-workers-missing-definition" nil)
+                nil)
+            (sbcl-worker-error (condition)
+              (sbcl-worker-error-message condition)))))
+    (test-assert (and message
+                      (search "SBCL-WORKERS-MISSING-DEFINITION" message)
+                      (search "No SBCL definition source" message))
+                 "a missing definition is reported by name for every kind"))
+  (let ((message
+          (handler-case
+              (progn
+                (sbcl-worker-source "cl-user::sbcl-workers-missing-definition"
+                                    "function")
+                nil)
+            (sbcl-worker-error (condition)
+              (sbcl-worker-error-message condition)))))
+    (test-assert (and message
+                      (search "SBCL-WORKERS-MISSING-DEFINITION" message)
+                      (search "No function definition source" message))
+                 "a missing definition is reported by name for one kind")))
+
 (defun run-tests ()
   "Run the complete sbcl-workers test suite and return true."
   (setf *tests-run* 0)
+  (test-source-not-found)
   (test-worker-names)
   (test-runtime)
   (test-output-bounds)
