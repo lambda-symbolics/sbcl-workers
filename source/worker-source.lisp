@@ -117,20 +117,38 @@ bound keeps the head and the tail and names the dropped middle."
              (and type (string-downcase type))))))
 
 (defun worker-source--pathname (recorded-pathname)
-  "Resolve RECORDED-PATHNAME only within the configured source tree."
-  (let* ((source-root (worker-source--root))
-         (pathname
-           (merge-pathnames
-            (worker-source--relative-pathname recorded-pathname)
-            source-root)))
-    (unless (and (uiop:subpathp pathname source-root)
-                 (probe-file pathname))
-      (worker--signal-error
-       (format nil "Recorded source ~S is absent from matching SBCL source."
-               recorded-pathname)
-       :operation :source
-       :pathname pathname))
-    (truename pathname)))
+  "Resolve RECORDED-PATHNAME to the readable file holding the definition.
+
+A definition loaded from a project or library records a path that still
+exists, and that file is read as it is. SBCL's own definitions record paths
+from the build host, which are mapped into the configured matching source tree."
+  (let ((existing (ignore-errors (probe-file recorded-pathname))))
+    (if (and existing (pathname-name existing))
+        existing
+        (let* ((source-root (worker-source--root))
+               (pathname
+                 (merge-pathnames
+                  (worker-source--relative-pathname recorded-pathname)
+                  source-root)))
+          (unless (and (uiop:subpathp pathname source-root)
+                       (probe-file pathname))
+            (worker--signal-error
+             (format nil "Recorded source ~S is absent from matching SBCL source."
+                     recorded-pathname)
+             :operation :source
+             :pathname pathname))
+          (truename pathname)))))
+
+(defun worker-source--display-pathname (pathname)
+  "Return PATHNAME relative to the matching SBCL source root when it lies there."
+  (let ((source-root
+          (handler-case
+              (worker-source--root)
+            (sbcl-worker-error ()
+              nil))))
+    (if (and source-root (uiop:subpathp pathname source-root))
+        (enough-namestring pathname source-root)
+        (namestring pathname))))
 
 (defun worker-source--line-number (source offset)
   "Return the one-based line number containing OFFSET in SOURCE."
@@ -200,7 +218,7 @@ bound keeps the head and the tail and names the dropped middle."
       (with-output-to-string (output)
         (format output "Kind: ~(~A~)~%Path: ~A~%Line: ~D~%"
                 kind
-                (enough-namestring pathname (worker-source--root))
+                (worker-source--display-pathname pathname)
                 (worker-source--line-number source offset))
         (if complete-form
             (write-string (worker--bounded-string complete-form :limit 5000)

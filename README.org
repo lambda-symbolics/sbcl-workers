@@ -64,7 +64,7 @@ The built-in runtime handles:
 - evaluation and compilation
 - ASDF or Quicklisp system loading
 - description
-- matching SBCL source lookup
+- source lookup for loaded definitions, mapping SBCL's own into matching SBCL source
 - ASDF tests
 - image saving
 

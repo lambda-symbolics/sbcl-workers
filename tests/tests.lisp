@@ -475,10 +475,31 @@
                       (search "No function definition source" message))
                  "a missing definition is reported by name for one kind")))
 
+(defun test-source-recorded-project-file ()
+  "Read a loaded definition from its recorded file without any matching SBCL source."
+  (let* ((root (test-root))
+         (source (merge-pathnames "recorded-definition.lisp" root)))
+    (test-write-text
+     source
+     (format nil "(in-package :cl-user)~%(defun sbcl-workers-recorded-definition (x)~%  (list :recorded x))~%"))
+    (let ((*error-output* (make-broadcast-stream))
+          (*standard-output* (make-broadcast-stream)))
+      (load (compile-file source
+                          :output-file (merge-pathnames "recorded-definition.fasl" root))))
+    (let ((sbcl-workers::*worker-source-root-environment-variable*
+            "SBCL_WORKERS_TESTS_UNSET_SOURCE_ROOT"))
+      (let ((output (nth-value 1 (sbcl-worker-source
+                                  "cl-user::sbcl-workers-recorded-definition"
+                                  "function"))))
+        (test-assert (and (search "(defun sbcl-workers-recorded-definition" output)
+                          (search (namestring (truename source)) output))
+                     "a loaded definition reads from its recorded file without matching SBCL source")))))
+
 (defun run-tests ()
   "Run the complete sbcl-workers test suite and return true."
   (setf *tests-run* 0)
   (test-source-not-found)
+  (test-source-recorded-project-file)
   (test-worker-names)
   (test-runtime)
   (test-output-bounds)
