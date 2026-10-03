@@ -440,6 +440,35 @@
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
   nil)
 
+(defun test-request-diagnostics ()
+  "Test user code prints freely and failures keep their output and failing frames."
+  (let* ((root (test-root))
+         (worker (sbcl-worker-create (test-environment root) :name "diagnostics")))
+    (ensure-directories-exist root)
+    (unwind-protect
+         (flet ((request (form)
+                  "Evaluate FORM in the worker and return the response plist."
+                  (rest (sbcl-worker-request worker :eval (list :form form)))))
+           (let ((printed (request "(progn (prin1 (make-condition 'simple-error :format-control \"unreadable\")) 7)")))
+             (test-assert (and (eq (getf printed :status) :ok)
+                               (equal (getf printed :values) '("7"))
+                               (search "#<SIMPLE-ERROR" (getf printed :output)))
+                          "user code prints unreadable objects with ordinary printer settings"))
+           (let ((failed (request "(progn (format t \"compiler-diagnostic-line~%\") (sbcl-workers-test-failing-frame))")))
+             (test-assert (eq (getf failed :status) :error)
+                          "an undefined function fails the request")
+             (test-assert (search "compiler-diagnostic-line" (getf failed :output))
+                          "a failed request keeps the output printed before its error")
+             (test-assert (search "SBCL-WORKERS-TEST-FAILING-FRAME" (getf failed :backtrace))
+                          "the backtrace shows the frames where the error was signaled"))
+           (let ((report (request "(progn (define-condition sbcl-workers-test-bad-report (error) () (:report (lambda (condition stream) (declare (ignore condition stream)) (error \"report broke\")))) (error 'sbcl-workers-test-bad-report))")))
+             (test-assert (and (eq (getf report :status) :error)
+                               (search "SBCL-WORKERS-TEST-BAD-REPORT" (getf report :message)))
+                          "a condition whose report fails is still named in the response")))
+      (sbcl-worker-stop worker)
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+  nil)
+
 (defun test-image-snapshot ()
   "Test forked heap saving, probing, publication, and independent cloning."
   (let* ((root (test-root))
@@ -550,6 +579,7 @@
   (test-pool)
   (test-worker-request-cancellation)
   (test-computed-pristine-command)
+  (test-request-diagnostics)
   (test-image-snapshot)
   (format t "~&sbcl-workers: ~D tests passed.~%" *tests-run*)
   t)

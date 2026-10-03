@@ -52,22 +52,33 @@ it once the response announcing the restart has been flushed.")
 (defparameter *worker-output-character-limit* 12000
   "The most captured output characters one worker response carries.")
 
+(defvar *worker-capture-stream* nil
+  "The stream collecting the current request's output, bound per request.")
+
 (defun worker--capture-evaluation (function)
-  "Call FUNCTION while capturing output, returning values and bounded output."
-  (let ((result-values nil))
-    (let ((output
-            (with-output-to-string (stream)
-              (let ((*standard-output* stream)
-                    (*error-output* stream)
-                    (*trace-output* stream)
-                    (*debug-io* stream)
-                    (*package* (worker--evaluation-package)))
-                (setf result-values
-                      (multiple-value-list (funcall function)))))))
-      (values (mapcar #'sbcl-worker-render-value result-values)
-              (worker--bounded-string
-               output
-               :limit *worker-output-character-limit*)))))
+  "Call FUNCTION while capturing output, returning values and bounded output.
+
+Output goes to *WORKER-CAPTURE-STREAM* when a request bound one, so an error
+response can still carry what FUNCTION printed, such as compiler diagnostics.
+FUNCTION runs with the standard printer settings; readable printing applies
+only to the protocol transport."
+  (let* ((stream (or *worker-capture-stream* (make-string-output-stream)))
+         (result-values
+           (let ((*standard-output* stream)
+                 (*error-output* stream)
+                 (*trace-output* stream)
+                 (*debug-io* stream)
+                 (*package* (worker--evaluation-package))
+                 (*print-readably* nil)
+                 (*print-circle* nil))
+             (multiple-value-list (funcall function)))))
+    (values (mapcar #'sbcl-worker-render-value result-values)
+            (worker--captured-output stream))))
+
+(defun worker--captured-output (stream)
+  "Return the bounded output collected so far by string output STREAM."
+  (worker--bounded-string (get-output-stream-string stream)
+                          :limit *worker-output-character-limit*))
 
 (defun worker--single-threaded-p ()
   "Return true when the worker has no live Lisp thread besides this one."
@@ -176,10 +187,21 @@ it once the response announcing the restart has been flushed.")
   "Execute one portable worker REQUEST and return a protocol response."
   (let ((request-id (getf (rest request) :id))
         (operation (getf (rest request) :operation))
-        (arguments (getf (rest request) :arguments)))
+        (arguments (getf (rest request) :arguments))
+        (*worker-capture-stream* (make-string-output-stream))
+        (*print-readably* nil)
+        (signaled nil))
     (handler-case
         (multiple-value-bind (result-values output)
-            (worker--dispatch operation arguments)
+            ;; Record the backtrace where each error is signaled, before any
+            ;; unwinding, so the response shows the failing frames.
+            (handler-bind ((error (lambda (condition)
+                                    (setf signaled
+                                          (cons condition
+                                                (or (ignore-errors
+                                                     (worker--condition-backtrace))
+                                                    ""))))))
+              (worker--dispatch operation arguments))
           (append (list :response
                         :id request-id
                         :status :ok
@@ -192,8 +214,31 @@ it once the response announcing the restart has been flushed.")
               :id request-id
               :status :error
               :condition-type (string (type-of condition))
-              :message (princ-to-string condition)
-              :backtrace (worker--condition-backtrace))))))
+              :message (worker--condition-message condition)
+              :output (worker--captured-output *worker-capture-stream*)
+              :backtrace (if (eq (car signaled) condition)
+                             (cdr signaled)
+                             (worker--condition-backtrace)))))))
+
+(defun worker--condition-message (condition)
+  "Return CONDITION's report, or a description when the report itself fails."
+  (handler-case (princ-to-string condition)
+    (error (report-failure)
+      (format nil "~A (its report failed: ~A)"
+              (type-of condition)
+              (ignore-errors (princ-to-string report-failure))))))
+
+(defun worker--write-packet (form)
+  "Write protocol FORM readably as one line and flush it.
+
+Only transport printing is readable; requests evaluate with ordinary printer
+settings, so printing a condition or other unreadable object in user code works."
+  (let ((*print-readably* t)
+        (*print-circle* t))
+    (prin1 form))
+  (terpri)
+  (finish-output)
+  nil)
 
 (defun sbcl-worker-main
     (&key
@@ -208,14 +253,10 @@ it once the response announcing the restart has been flushed.")
    :protocol-tag protocol-tag
    :protocol-version protocol-version
    :source-root-environment-variable source-root-environment-variable)
-  (let ((*package* (worker--evaluation-package))
-        (*print-readably* t)
-        (*print-circle* t))
-    (prin1 (list *worker-protocol-tag*
-                 :version *worker-protocol-version*
-                 :image *worker-image-identifier*))
-    (terpri)
-    (finish-output)
+  (let ((*package* (worker--evaluation-package)))
+    (worker--write-packet (list *worker-protocol-tag*
+                                :version *worker-protocol-version*
+                                :image *worker-image-identifier*))
     (loop for request = (let ((*read-eval* nil))
                           (read *standard-input* nil :end))
           until (eq request :end)
@@ -227,9 +268,7 @@ it once the response announcing the restart has been flushed.")
                                :status :error
                                :message "Malformed worker request."
                                :backtrace ""))))
-               (prin1 response)
-               (terpri)
-               (finish-output)
+               (worker--write-packet response)
                (let ((pending *worker-pending-save*))
                  (when pending
                    ;; Clear it before saving: the saved heap must not carry

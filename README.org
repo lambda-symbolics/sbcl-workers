@@ -44,6 +44,13 @@ Applications can configure:
 =sbcl-worker-name-p= checks the accepted one-to-eighty character worker-name
 syntax.
 
+Requests run with the standard printer settings; only the protocol line itself
+is printed readably, so user code may print conditions and other unreadable
+objects. Every response carries the request's captured =:output=. An =:error=
+response adds the condition's =:message= and a =:backtrace= taken where the
+error was signaled, so a failed system load still shows the compiler's
+diagnostics and the failing frames.
+
 * Worker images
 
 =sbcl-worker-save-image= forks a short-lived saver from a running worker. The
