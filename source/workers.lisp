@@ -117,8 +117,7 @@
             "--core"
             (namestring (sbcl-worker-core-pathname worker))
             "--end-runtime-options")
-      (copy-list
-       (worker-environment--pristine-command (worker--environment worker)))))
+      (worker-environment--pristine-argv (worker--environment worker))))
 
 (defun worker--handshake-p (worker form)
   "Return true when FORM is the exact expected handshake for WORKER."

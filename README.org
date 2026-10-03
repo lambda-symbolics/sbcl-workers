@@ -31,7 +31,10 @@ keeps the library independent of any executable, build system, or application:
 #+END_SRC
 
 The pristine command must load =sbcl-workers= and call
-=sbcl-workers:sbcl-worker-main=. Applications can configure:
+=sbcl-workers:sbcl-worker-main=. It may also be a function of no arguments
+returning such a list; it is called at every pristine start, so a host can boot
+a prebuilt core while it is current and fall back to loading source otherwise.
+Applications can configure:
 
 - the evaluation package
 - handshake tag

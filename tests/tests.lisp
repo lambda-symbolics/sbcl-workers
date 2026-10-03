@@ -397,6 +397,49 @@
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
   nil)
 
+(defun test-computed-pristine-command ()
+  "Test a pristine command function is consulted at every start and validated."
+  (let* ((root (test-root))
+         (calls 0)
+         (environment
+           (sbcl-worker-environment-create
+            :pristine-command (lambda ()
+                                (incf calls)
+                                (test-pristine-command))
+            :working-directory root
+            :image-root (merge-pathnames "images/" root)))
+         (worker (sbcl-worker-create environment :name "computed"))
+         (invalid
+           (sbcl-worker-create
+            (sbcl-worker-environment-create
+             :pristine-command (lambda () (list "sbcl" ""))
+             :working-directory root
+             :image-root (merge-pathnames "images/" root))
+            :name "invalid")))
+    (ensure-directories-exist root)
+    (unwind-protect
+         (flet ((answer ()
+                  "Return the worker's rendered answer to a fixed form."
+                  (getf (rest (sbcl-worker-request
+                               worker :eval '(:form "(+ 40 2)")))
+                        :values)))
+           (test-assert (equal (answer) '("42"))
+                        "a computed pristine command starts a worker")
+           (sbcl-worker-stop worker)
+           (test-assert (and (equal (answer) '("42")) (= calls 2))
+                        "every pristine start computes its command again")
+           (test-assert
+            (handler-case
+                (progn
+                  (sbcl-worker-request invalid :eval '(:form "1"))
+                  nil)
+              (sbcl-worker-error ()
+                t))
+            "an invalid computed command is rejected"))
+      (sbcl-worker-stop worker)
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+  nil)
+
 (defun test-image-snapshot ()
   "Test forked heap saving, probing, publication, and independent cloning."
   (let* ((root (test-root))
@@ -506,6 +549,7 @@
   (test-images)
   (test-pool)
   (test-worker-request-cancellation)
+  (test-computed-pristine-command)
   (test-image-snapshot)
   (format t "~&sbcl-workers: ~D tests passed.~%" *tests-run*)
   t)

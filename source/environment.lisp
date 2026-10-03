@@ -9,8 +9,9 @@
    (pristine-command
     :initarg :pristine-command
     :reader worker-environment--pristine-command
-    :type list
-    :documentation "The argv list that starts a pristine protocol runtime.")
+    :type (or cons function)
+    :documentation "The argv list that starts a pristine protocol runtime, or a
+nullary function returning one, called at every pristine start.")
    (working-directory
     :initarg :working-directory
     :reader sbcl-worker-environment-working-directory
@@ -54,6 +55,25 @@
     :documentation "Opaque host application context associated with the paths."))
   (:documentation "Host configuration needed to manage isolated SBCL workers."))
 
+(defun worker--command-p (value)
+  "Return true when VALUE is a nonempty argv list of nonempty strings."
+  (and (consp value)
+       (every #'worker--non-empty-string-p value)
+       t))
+
+(defun worker-environment--pristine-argv (environment)
+  "Return a fresh pristine argv list for ENVIRONMENT, validating a computed one."
+  (let ((command (worker-environment--pristine-command environment)))
+    (if (functionp command)
+        (let ((argv (funcall command)))
+          (unless (worker--command-p argv)
+            (worker--signal-error
+             "The pristine worker command function returned an invalid argv list."
+             :operation :start
+             :stage :validation))
+          (copy-list argv))
+        (copy-list command))))
+
 (defun sbcl-worker-environment-create
     (&key
        (sbcl-command "sbcl")
@@ -68,8 +88,8 @@
        context)
   "Create and validate a reusable worker ENVIRONMENT."
   (unless (and (worker--non-empty-string-p sbcl-command)
-               (consp pristine-command)
-               (every #'worker--non-empty-string-p pristine-command)
+               (or (functionp pristine-command)
+                   (worker--command-p pristine-command))
                image-root
                (worker--non-empty-string-p evaluation-package)
                (keywordp protocol-tag)
@@ -85,7 +105,9 @@
   (make-instance
    'sbcl-worker-environment
    :sbcl-command sbcl-command
-   :pristine-command (copy-list pristine-command)
+   :pristine-command (if (functionp pristine-command)
+                         pristine-command
+                         (copy-list pristine-command))
    :working-directory (uiop:ensure-directory-pathname working-directory)
    :image-root (uiop:ensure-directory-pathname image-root)
    :evaluation-package evaluation-package
