@@ -112,10 +112,10 @@
   (let* ((circular (list :root))
          (success
           (sbcl-worker-handle-request
-           '(:request :id 1 :operation :eval :arguments (:form "(+ 20 22)"))))
+           '(:request :id 1 :operation :eval :arguments (:forms ("(+ 20 22)")))))
          (failure
           (sbcl-worker-handle-request
-           '(:request :id 2 :operation :eval :arguments (:form "(/ 1 0)")))))
+           '(:request :id 2 :operation :eval :arguments (:forms ("(/ 1 0)"))))))
     (setf (rest circular) circular)
     (test-assert (search "#1=" (sbcl-worker-render-value circular))
                  "value rendering safely represents circular structure")
@@ -245,16 +245,16 @@
          (let* ((alpha (sbcl-worker-pool-start pool "alpha" "pristine"))
                 (beta (sbcl-worker-pool-start pool "beta" "pristine")))
            (sbcl-worker-request
-            alpha :eval '(:form "(defparameter *pool-value* 41)"))
+            alpha :eval '(:forms ("(defparameter *pool-value* 41)")))
            (test-assert
             (equal (getf (rest (sbcl-worker-request
-                                alpha :eval '(:form "(1+ *pool-value*)")))
+                                alpha :eval '(:forms ("(1+ *pool-value*)"))))
                          :values)
                    '("42"))
             "a named worker retains its heap")
            (test-assert
             (equal (getf (rest (sbcl-worker-request
-                                beta :eval '(:form "(boundp '*pool-value*)")))
+                                beta :eval '(:forms ("(boundp '*pool-value*)"))))
                          :values)
                    '("NIL"))
             "separate workers do not share heap state")
@@ -270,7 +270,7 @@
             (equal (getf (rest (sbcl-worker-request
                                 alpha
                                 :eval
-                                '(:form "cl-user::*sbcl-worker-reader-evaluated-value*")))
+                                '(:forms ("cl-user::*sbcl-worker-reader-evaluated-value*"))))
                          :values)
                    '("42"))
             "reader evaluation computes dependency source forms")
@@ -292,7 +292,7 @@
                           (rest
                            (sbcl-worker-request
                             alpha :eval
-                            '(:form "(namestring (uiop:getcwd))")))
+                            '(:forms ("(namestring (uiop:getcwd))"))))
                           :values)))
                 "a workspace change updates live process directories")
                (test-assert
@@ -333,7 +333,7 @@
              (getf (rest (sbcl-worker-request
                           (sbcl-worker-pool-worker pool "alpha")
                           :eval
-                          '(:form "(boundp '*pool-value*)")))
+                          '(:forms ("(boundp '*pool-value*)"))))
                    :values)
              '("NIL"))
             "reset replaces only the named worker heap")
@@ -361,11 +361,12 @@
                          worker
                          :eval
                          (list
-                          :form
-                          (format
-                           nil
-                           "(progn (with-open-file (stream ~S :direction :output :if-exists :supersede :if-does-not-exist :create) (write-line \"started\" stream)) (defparameter *cancelled-worker-state* t) (sleep 30))"
-                           (namestring marker))))
+                          :forms
+                          (list
+                           (format
+                            nil
+                            "(progn (with-open-file (stream ~S :direction :output :if-exists :supersede :if-does-not-exist :create) (write-line \"started\" stream)) (defparameter *cancelled-worker-state* t) (sleep 30))"
+                            (namestring marker)))))
                       (serious-condition ()
                         nil)))
                   :name "SBCL worker cancellation test"))
@@ -389,7 +390,7 @@
              (getf
               (rest
                (sbcl-worker-request
-                worker :eval '(:form "(boundp '*cancelled-worker-state*)")))
+                worker :eval '(:forms ("(boundp '*cancelled-worker-state*)"))))
               :values)
              '("NIL"))
             "the next request starts from a clean protocol process"))
@@ -421,7 +422,7 @@
          (flet ((answer ()
                   "Return the worker's rendered answer to a fixed form."
                   (getf (rest (sbcl-worker-request
-                               worker :eval '(:form "(+ 40 2)")))
+                               worker :eval '(:forms ("(+ 40 2)"))))
                         :values)))
            (test-assert (equal (answer) '("42"))
                         "a computed pristine command starts a worker")
@@ -431,11 +432,55 @@
            (test-assert
             (handler-case
                 (progn
-                  (sbcl-worker-request invalid :eval '(:form "1"))
+                  (sbcl-worker-request invalid :eval '(:forms ("1")))
                   nil)
               (sbcl-worker-error ()
                 t))
             "an invalid computed command is rejected"))
+      (sbcl-worker-stop worker)
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+  nil)
+
+(defun test-form-sequences ()
+  "Test several forms are read and evaluated in order and failures name their form."
+  (let* ((root (test-root))
+         (worker (sbcl-worker-create (test-environment root) :name "sequences")))
+    (ensure-directories-exist root)
+    (unwind-protect
+         (flet ((request (operation &rest forms)
+                  "Send FORMS to the worker with OPERATION and return the response plist."
+                  (rest (sbcl-worker-request worker operation (list :forms forms)))))
+           (let ((late (request :eval
+                                "(defpackage #:sbcl-workers-test-late (:use #:cl) (:export #:answer))"
+                                "(defun sbcl-workers-test-late:answer () (format t \"late~%\") 42)"
+                                "(sbcl-workers-test-late:answer)")))
+             (test-assert (and (eq (getf late :status) :ok)
+                               (equal (getf late :values) '("42"))
+                               (search "late" (getf late :output)))
+                          "a later form reads a package an earlier form created"))
+           (let ((failed (request :eval
+                                  "(defparameter *sequence-marker* 1)"
+                                  "(error \"second form failed\")"
+                                  "(defparameter *sequence-marker* 3)")))
+             (test-assert (and (eq (getf failed :status) :error)
+                               (search "second form failed" (getf failed :message))
+                               (eql (getf failed :form-index) 2)
+                               (eql (getf failed :form-count) 3))
+                          "a failure reports which form of how many failed")
+             (test-assert (equal (getf (request :eval "*sequence-marker*") :values) '("1"))
+                          "forms before a failure keep their effects and later forms do not run"))
+           (let ((unreadable (request :eval "1" "(list 2")))
+             (test-assert (and (eq (getf unreadable :status) :error)
+                               (eql (getf unreadable :form-index) 2))
+                          "a form that fails to read is named by its position"))
+           (test-assert (equal (getf (request :compile "(defparameter *compiled* 5)" "(* *compiled* 2)")
+                                     :values)
+                               '("10"))
+                        "compiled sequences return the last form's values")
+           (let ((empty (rest (sbcl-worker-request worker :eval '(:forms ())))))
+             (test-assert (and (eq (getf empty :status) :error)
+                               (null (getf empty :form-index)))
+                          "an empty form list is refused")))
       (sbcl-worker-stop worker)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
   nil)
@@ -448,7 +493,7 @@
     (unwind-protect
          (flet ((request (form)
                   "Evaluate FORM in the worker and return the response plist."
-                  (rest (sbcl-worker-request worker :eval (list :form form)))))
+                  (rest (sbcl-worker-request worker :eval (list :forms (list form))))))
            (let ((printed (request "(progn (prin1 (make-condition 'simple-error :format-control \"unreadable\")) 7)")))
              (test-assert (and (eq (getf printed :status) :ok)
                                (equal (getf printed :values) '("7"))
@@ -517,7 +562,7 @@
          (let ((source (sbcl-worker-pool-start pool "source" "pristine")))
            (sbcl-worker-request
             source :eval
-            '(:form "(defparameter *saved-worker-marker* 9001)"))
+            '(:forms ("(defparameter *saved-worker-marker* 9001)")))
            (let ((image
                    (sbcl-worker-save-image
                     environment source
@@ -535,7 +580,7 @@
                (test-assert
                 (equal
                  (getf (rest (sbcl-worker-request
-                              clone :eval '(:form "*saved-worker-marker*")))
+                              clone :eval '(:forms ("*saved-worker-marker*"))))
                        :values)
                  '("9001"))
                 "a clone inherits the saved heap"))))
@@ -548,7 +593,7 @@
            (sbcl-worker-handle-request
             '(:request :id 4 :operation :eval
               :arguments
-              (:form "(progn (dotimes (i 4000) (format t \"line-~4,'0D~%\" i)) :done)"))))
+              (:forms ("(progn (dotimes (i 4000) (format t \"line-~4,'0D~%\" i)) :done)")))))
          (output (getf (rest response) :output)))
     (test-assert (eq (getf (rest response) :status) :ok)
                  "the long-output evaluation succeeds")
@@ -618,6 +663,7 @@
   (test-worker-request-cancellation)
   (test-computed-pristine-command)
   (test-request-diagnostics)
+  (test-form-sequences)
   (test-early-exit-diagnostics)
   (test-image-snapshot)
   (format t "~&sbcl-workers: ~D tests passed.~%" *tests-run*)

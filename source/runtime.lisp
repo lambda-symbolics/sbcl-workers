@@ -7,7 +7,7 @@
 (defparameter *worker-protocol-tag* :sbcl-worker
   "The first element emitted in this worker's handshake.")
 
-(defparameter *worker-protocol-version* 1
+(defparameter *worker-protocol-version* 2
   "The line-protocol version emitted in this worker's handshake.")
 
 (defvar *worker-pending-save* nil
@@ -80,6 +80,34 @@ only to the protocol transport."
   (worker--bounded-string (get-output-stream-string stream)
                           :limit *worker-output-character-limit*))
 
+(defvar *worker-form-position* nil
+  "The one-based index and count of the form being read or evaluated, or NIL.")
+
+(defun worker--evaluate-forms (sources evaluator)
+  "Read and evaluate each of SOURCES in turn, returning the last form's values.
+
+SOURCES is a non-empty list of strings, each holding exactly one form. A form
+is read only after the previous one has been evaluated, so it may name packages
+and symbols that the earlier forms created. EVALUATOR receives each read form.
+While a form is read or evaluated, *WORKER-FORM-POSITION* holds its index and
+the form count, so a failure response can say which form failed."
+  (unless (and (consp sources)
+               (every #'stringp sources))
+    (worker--signal-error
+     "Evaluation needs a non-empty list of form strings."
+     :operation :read))
+  (loop with count = (length sources)
+        for source in sources
+        for index from 1
+        for result = (let ((*worker-form-position* (cons index count)))
+                       (multiple-value-list
+                        (funcall evaluator (worker--read-form source))))
+        finally (return (values-list result))))
+
+(defun worker--compile-and-call (form)
+  "Compile FORM as the body of a function and call it."
+  (funcall (compile nil `(lambda () ,form))))
+
 (defun worker--single-threaded-p ()
   "Return true when the worker has no live Lisp thread besides this one."
   (notany (lambda (thread)
@@ -149,14 +177,12 @@ only to the protocol transport."
     (:eval
      (worker--capture-evaluation
       (lambda ()
-        (eval (worker--read-form (getf arguments :form))))))
+        (worker--evaluate-forms (getf arguments :forms) #'eval))))
     (:compile
      (worker--capture-evaluation
       (lambda ()
-        (funcall
-         (compile nil
-                  `(lambda ()
-                     ,(worker--read-form (getf arguments :form))))))))
+        (worker--evaluate-forms (getf arguments :forms)
+                                #'worker--compile-and-call))))
     (:load-system
      (worker--capture-evaluation
       (lambda ()
@@ -190,7 +216,8 @@ only to the protocol transport."
         (arguments (getf (rest request) :arguments))
         (*worker-capture-stream* (make-string-output-stream))
         (*print-readably* nil)
-        (signaled nil))
+        (signaled nil)
+        (failed-position nil))
     (handler-case
         (multiple-value-bind (result-values output)
             ;; Record the backtrace where each error is signaled, before any
@@ -200,7 +227,9 @@ only to the protocol transport."
                                           (cons condition
                                                 (or (ignore-errors
                                                      (worker--condition-backtrace))
-                                                    ""))))))
+                                                    ""))
+                                          failed-position
+                                          *worker-form-position*))))
               (worker--dispatch operation arguments))
           (append (list :response
                         :id request-id
@@ -210,15 +239,18 @@ only to the protocol transport."
                   (when *worker-pending-save*
                     (list :restarting-p t))))
       (error (condition)
-        (list :response
-              :id request-id
-              :status :error
-              :condition-type (string (type-of condition))
-              :message (worker--condition-message condition)
-              :output (worker--captured-output *worker-capture-stream*)
-              :backtrace (if (eq (car signaled) condition)
-                             (cdr signaled)
-                             (worker--condition-backtrace)))))))
+        (append (list :response
+                      :id request-id
+                      :status :error
+                      :condition-type (string (type-of condition))
+                      :message (worker--condition-message condition)
+                      :output (worker--captured-output *worker-capture-stream*)
+                      :backtrace (if (eq (car signaled) condition)
+                                     (cdr signaled)
+                                     (worker--condition-backtrace)))
+                (when (and failed-position (eq (car signaled) condition))
+                  (list :form-index (car failed-position)
+                        :form-count (cdr failed-position))))))))
 
 (defun worker--condition-message (condition)
   "Return CONDITION's report, or a description when the report itself fails."

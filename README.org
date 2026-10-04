@@ -27,8 +27,15 @@ keeps the library independent of any executable, build system, or application:
   (sbcl-workers:sbcl-worker-pool-start *pool* "compiler" "pristine"))
 
 (sbcl-workers:sbcl-worker-request
- *repl* :eval '(:form "(+ 20 22)"))
+ *repl* :eval '(:forms ("(+ 20 22)")))
 #+END_SRC
+
+An =:eval= or =:compile= request carries =:forms=, a non-empty list of strings
+that each hold exactly one form. The worker reads and evaluates them in order,
+reading a form only after the previous one ran, so a later form may use a
+package an earlier one loaded. The response carries the last form's values and
+the output of all of them; a failure stops the sequence, keeps the effects of
+the forms before it, and reports =:form-index= and =:form-count=.
 
 The pristine command must load =sbcl-workers= and call
 =sbcl-workers:sbcl-worker-main=. It may also be a function of no arguments

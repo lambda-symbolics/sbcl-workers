@@ -375,7 +375,7 @@ old process reaping or stream cleanup."
              (sbcl-worker-request
               worker
               :eval
-              (list :form (worker--working-directory-form directory))))
+              (list :forms (list (worker--working-directory-form directory)))))
            (properties (rest response)))
       (unless (eq (getf properties :status) :ok)
         (worker--signal-error
@@ -585,7 +585,7 @@ old process reaping or stream cleanup."
            :core-pathname core-pathname)))
     (unwind-protect
          (let ((response
-                 (sbcl-worker-request probe :eval '(:form "(+ 20 22)"))))
+                 (sbcl-worker-request probe :eval '(:forms ("(+ 20 22)")))))
            (unless (and (eq (getf (rest response) :status) :ok)
                         (equal (getf (rest response) :values) '("42")))
              (worker-image--signal-error

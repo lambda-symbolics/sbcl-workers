@@ -82,7 +82,7 @@ nullary function returning one, called at every pristine start.")
        image-root
        (evaluation-package "CL-USER")
        (protocol-tag :sbcl-worker)
-       (protocol-version 1)
+       (protocol-version 2)
        (source-root-environment-variable "SBCL_SOURCE_ROOT")
        source-revision-function
        context)
