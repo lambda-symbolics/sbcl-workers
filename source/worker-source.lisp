@@ -16,17 +16,31 @@
        :stage :configuration)))
 
 (defun worker--read-form (source &key (read-eval t))
-  "Read exactly one Common Lisp form from SOURCE."
+  "Read exactly one Common Lisp form from SOURCE.
+
+Text after the first form that is not whitespace or a comment, including a
+stray closing parenthesis, is refused with the position where the first form
+ended and the start of the trailing text."
   (let ((*read-eval* read-eval)
         (*package* (worker--evaluation-package))
         (end-marker (cons nil nil)))
     (multiple-value-bind (form position)
         (read-from-string source t nil)
-      (let ((remainder (read-from-string source nil end-marker :start position)))
-        (unless (eq remainder end-marker)
-          (worker--signal-error
-           "Expected exactly one Common Lisp form."
-           :operation :read)))
+      (unless (eq end-marker
+                  (handler-case (read-from-string source nil end-marker :start position)
+                    (error ()
+                      nil)))
+        (worker--signal-error
+         (format nil "Expected exactly one Common Lisp form, but text follows the ~
+                      first form, which ends at character ~D: ~S. Check the ~
+                      parentheses, or wrap several forms in PROGN."
+                 position
+                 (let ((rest (string-left-trim '(#\Space #\Tab #\Newline #\Return)
+                                               (subseq source position))))
+                   (if (> (length rest) 80)
+                       (concatenate 'string (subseq rest 0 80) "...")
+                       rest)))
+         :operation :read))
       form)))
 
 (defun worker--bounded-string (value &key (limit 12000))
