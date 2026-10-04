@@ -11,6 +11,13 @@
                 #:sbcl-worker-error-message
                 #:sbcl-worker-error-operation
                 #:sbcl-worker-error-stage
+                #:sbcl-worker-manager-change-working-directory
+                #:sbcl-worker-manager-render
+                #:sbcl-worker-manager-reset
+                #:sbcl-worker-manager-start
+                #:sbcl-worker-manager-stop
+                #:sbcl-worker-manager-stop-worker
+                #:sbcl-worker-manager-worker
                 #:sbcl-worker-handle-request
                 #:sbcl-worker-image-compatible-p
                 #:sbcl-worker-image-core-pathname

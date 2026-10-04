@@ -53,6 +53,13 @@
            #:sbcl-worker-image-validate-identifier
            #:sbcl-worker-main
            #:sbcl-worker-manager-detach-inherited-processes
+           #:sbcl-worker-manager-change-working-directory
+           #:sbcl-worker-manager-render
+           #:sbcl-worker-manager-reset
+           #:sbcl-worker-manager-start
+           #:sbcl-worker-manager-stop
+           #:sbcl-worker-manager-stop-worker
+           #:sbcl-worker-manager-worker
            #:sbcl-worker-name
            #:sbcl-worker-name-p
            #:sbcl-worker-pool

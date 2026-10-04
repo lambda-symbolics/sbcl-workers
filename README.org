@@ -87,6 +87,15 @@ The built-in runtime handles:
 
 Responses contain only readable Common Lisp data.
 
+* Worker managers
+
+A host may hold one worker, a named pool, or nothing yet. The
+=sbcl-worker-manager-*= generics address all three the same way: worker,
+start, reset, stop-worker, stop, change-working-directory, and render. A single
+worker answers only for its own name and image and refuses operations that need
+named workers; with no manager, stopping and moving do nothing and everything
+else signals =sbcl-worker-error=.
+
 * Tests
 
 #+BEGIN_SRC lisp

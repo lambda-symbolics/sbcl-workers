@@ -692,6 +692,121 @@ requires the unpublished core to exist."
         (worker--next-request-id worker) 1)
   nil)
 
+;;;; -- Worker Managers --
+
+;;; A host holds either one worker or a named pool, or nothing yet. The manager
+;;; protocol lets it address either through one set of operations: a single
+;;; worker answers for its own name and image only, and operations that need
+;;; named workers refuse it.
+
+(defgeneric sbcl-worker-manager-worker (manager name)
+  (:documentation "Return the worker named NAME from MANAGER, starting it when needed."))
+
+(defgeneric sbcl-worker-manager-start (manager name image-identifier)
+  (:documentation "Start worker NAME in MANAGER from IMAGE-IDENTIFIER, or return it when live."))
+
+(defgeneric sbcl-worker-manager-reset (manager name image-identifier)
+  (:documentation "Replace worker NAME in MANAGER with a fresh process from IMAGE-IDENTIFIER."))
+
+(defgeneric sbcl-worker-manager-stop-worker (manager name)
+  (:documentation "Stop and forget worker NAME in MANAGER."))
+
+(defgeneric sbcl-worker-manager-stop (manager)
+  (:documentation "Stop every live worker MANAGER holds."))
+
+(defgeneric sbcl-worker-manager-change-working-directory (manager environment)
+  (:documentation "Move MANAGER's current and future workers to ENVIRONMENT's directory."))
+
+(defgeneric sbcl-worker-manager-render (manager)
+  (:documentation "Return a concise listing of MANAGER's workers and their images."))
+
+(defun worker-manager--refuse (operation control &rest arguments)
+  "Signal that a manager cannot perform OPERATION, described by CONTROL and ARGUMENTS."
+  (worker--signal-error (apply #'format nil control arguments) :operation operation))
+
+(defmethod sbcl-worker-manager-worker ((manager sbcl-worker-pool) (name string))
+  (sbcl-worker-pool-worker manager name))
+
+(defmethod sbcl-worker-manager-worker ((manager sbcl-worker) (name string))
+  (unless (string= name (sbcl-worker-name manager))
+    (worker-manager--refuse :worker "This single SBCL worker provides only its own worker ~A."
+                            (sbcl-worker-name manager)))
+  manager)
+
+(defmethod sbcl-worker-manager-start
+    ((manager sbcl-worker-pool) (name string) image-identifier)
+  (sbcl-worker-pool-start manager name image-identifier))
+
+(defmethod sbcl-worker-manager-start ((manager sbcl-worker) (name string) image-identifier)
+  (declare (ignore name image-identifier))
+  (worker-manager--refuse :start "Starting a named worker requires an SBCL worker pool."))
+
+(defmethod sbcl-worker-manager-reset
+    ((manager sbcl-worker-pool) (name string) (image-identifier string))
+  (sbcl-worker-pool-reset manager name image-identifier))
+
+(defmethod sbcl-worker-manager-reset
+    ((manager sbcl-worker) (name string) (image-identifier string))
+  (unless (and (string= name (sbcl-worker-name manager))
+               (string= image-identifier (sbcl-worker-used-image-identifier manager)))
+    (worker-manager--refuse :reset "A single SBCL worker cannot switch its name or image."))
+  (sbcl-worker-reset manager))
+
+(defmethod sbcl-worker-manager-stop-worker ((manager sbcl-worker-pool) (name string))
+  (sbcl-worker-pool-stop manager name))
+
+(defmethod sbcl-worker-manager-stop-worker ((manager sbcl-worker) (name string))
+  (declare (ignore name))
+  (worker-manager--refuse :stop "Stopping a named worker requires an SBCL worker pool."))
+
+(defmethod sbcl-worker-manager-stop ((manager sbcl-worker-pool))
+  (sbcl-worker-pool-stop-all manager))
+
+(defmethod sbcl-worker-manager-stop ((manager sbcl-worker))
+  (sbcl-worker-stop manager))
+
+(defmethod sbcl-worker-manager-change-working-directory
+    ((manager sbcl-worker-pool) (environment sbcl-worker-environment))
+  (sbcl-worker-pool-change-working-directory manager environment))
+
+(defmethod sbcl-worker-manager-change-working-directory
+    ((manager sbcl-worker) (environment sbcl-worker-environment))
+  (sbcl-worker-change-working-directory manager environment))
+
+(defmethod sbcl-worker-manager-render ((manager sbcl-worker-pool))
+  (sbcl-worker-pool-render manager))
+
+(defmethod sbcl-worker-manager-render ((manager sbcl-worker))
+  (worker-manager--refuse :workers "Listing named workers requires an SBCL worker pool."))
+
+;;; Without a manager there is nothing to stop or move, and nothing to use.
+
+(defmethod sbcl-worker-manager-stop ((manager null))
+  nil)
+
+(defmethod sbcl-worker-manager-change-working-directory ((manager null) environment)
+  (declare (ignore environment))
+  nil)
+
+(defmethod sbcl-worker-manager-worker ((manager null) name)
+  (declare (ignore name))
+  (worker-manager--refuse :worker "No SBCL worker manager is available."))
+
+(defmethod sbcl-worker-manager-start ((manager null) name image-identifier)
+  (declare (ignore name image-identifier))
+  (worker-manager--refuse :start "No SBCL worker manager is available."))
+
+(defmethod sbcl-worker-manager-reset ((manager null) name image-identifier)
+  (declare (ignore name image-identifier))
+  (worker-manager--refuse :reset "No SBCL worker manager is available."))
+
+(defmethod sbcl-worker-manager-stop-worker ((manager null) name)
+  (declare (ignore name))
+  (worker-manager--refuse :stop "No SBCL worker manager is available."))
+
+(defmethod sbcl-worker-manager-render ((manager null))
+  (worker-manager--refuse :workers "No SBCL worker manager is available."))
+
 (defun sbcl-worker-manager-detach-inherited-processes (manager)
   "Detach a forked host's inherited worker descriptors without killing workers."
   (typecase manager
