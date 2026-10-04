@@ -25,7 +25,7 @@ ended and the start of the trailing text."
         (*package* (worker--evaluation-package))
         (end-marker (cons nil nil)))
     (multiple-value-bind (form position)
-        (read-from-string source t nil)
+        (read-from-string source t nil :preserve-whitespace t)
       (unless (eq end-marker
                   (handler-case (read-from-string source nil end-marker :start position)
                     (error ()

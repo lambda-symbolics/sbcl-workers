@@ -465,7 +465,7 @@
              (test-assert (and (eq (getf report :status) :error)
                                (search "SBCL-WORKERS-TEST-BAD-REPORT" (getf report :message)))
                           "a condition whose report fails is still named in the response"))
-           (let ((trailing (request "(list 1 (+ 1 2))) (print :lost)")))
+           (let ((trailing (request "(list 1 (+ 1 2)) ) (print :lost)")))
              (test-assert (and (eq (getf trailing :status) :error)
                                (search "ends at character 16" (getf trailing :message))
                                (search ") (print :lost)" (getf trailing :message)))
