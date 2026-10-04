@@ -469,6 +469,37 @@
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
   nil)
 
+(defun test-early-exit-diagnostics ()
+  "Test a worker that dies before its handshake reports its status and error output."
+  (let ((root (test-root)))
+    (ensure-directories-exist root)
+    (flet ((start-failure (form)
+             "Return the start failure message of a worker running FORM, or NIL."
+             (let ((worker (sbcl-worker-create
+                            (sbcl-worker-environment-create
+                             :pristine-command (list "sbcl" "--noinform" "--non-interactive"
+                                                     "--no-userinit" "--eval" form)
+                             :working-directory root
+                             :image-root (merge-pathnames "images/" root))
+                            :name "early-exit")))
+               (handler-case (progn (sbcl-worker-start worker) nil)
+                 (sbcl-worker-error (condition)
+                   (and (eq (sbcl-worker-error-stage condition) :handshake)
+                        (sbcl-worker-error-message condition)))))))
+      (unwind-protect
+           (let ((noisy (start-failure "(progn (format *error-output* \"boot-failure-marker~%\") (sb-ext:exit :code 3 :abort t))"))
+                 (silent (start-failure "(sb-ext:exit :code 4 :abort t)")))
+             (test-assert (and noisy
+                               (search "exit status 3" noisy)
+                               (search "boot-failure-marker" noisy))
+                          "an early exit reports the status and the boot error output")
+             (test-assert (and silent
+                               (search "exit status 4" silent)
+                               (search "no error output" silent))
+                          "a silent early exit says it wrote no error output"))
+        (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+  nil)
+
 (defun test-image-snapshot ()
   "Test forked heap saving, probing, publication, and independent cloning."
   (let* ((root (test-root))
@@ -580,6 +611,7 @@
   (test-worker-request-cancellation)
   (test-computed-pristine-command)
   (test-request-diagnostics)
+  (test-early-exit-diagnostics)
   (test-image-snapshot)
   (format t "~&sbcl-workers: ~D tests passed.~%" *tests-run*)
   t)

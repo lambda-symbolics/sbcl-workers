@@ -4,6 +4,7 @@
                 #:make-lock
                 #:make-recursive-lock
                 #:make-thread
+                #:thread-alive-p
                 #:with-lock-held
                 #:with-recursive-lock-held)
   (:import-from #:sexp-store

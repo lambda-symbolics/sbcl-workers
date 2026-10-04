@@ -35,5 +35,6 @@
                 #:sbcl-worker-running-p
                 #:sbcl-worker-source
                 #:sbcl-worker-save-image
+                #:sbcl-worker-start
                 #:sbcl-worker-stop)
   (:export #:run-tests))

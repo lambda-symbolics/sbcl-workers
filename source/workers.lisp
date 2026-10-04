@@ -131,27 +131,152 @@
                   (sbcl-worker-used-image-identifier worker))
          t)))
 
+;;;; -- Worker Error Output --
+
+;;; A worker's error output is drained by a relay thread instead of being
+;;; handed to the process as a host stream. The relay forwards every line to
+;;; the host's error output as before, and keeps a bounded copy while the
+;;; worker boots, so a worker that dies before its handshake can report why.
+
+(defparameter *worker-startup-error-output-limit* (* 64 1024)
+  "The most characters of error output retained while a worker boots.")
+
+(defparameter *worker-startup-error-report-limit* 4000
+  "The characters of retained boot error output a failed start reports.")
+
+(defparameter *worker-exit-wait-seconds* 2
+  "How long a failed start waits for the exited worker and its relay.")
+
+(defclass worker-error-relay ()
+  ((forward
+    :initarg :forward
+    :reader worker-error-relay--forward
+    :type stream
+    :documentation "The host stream receiving every forwarded line.")
+   (lock
+    :initform (make-lock "SBCL worker error relay")
+    :reader worker-error-relay--lock
+    :documentation "The lock guarding the retained boot output.")
+   (retained
+    :initform (make-string-output-stream)
+    :accessor worker-error-relay--retained
+    :type (or null stream)
+    :documentation "The boot error output so far, or NIL once booted.")
+   (retained-length
+    :initform 0
+    :accessor worker-error-relay--retained-length
+    :type integer
+    :documentation "The characters written to the retained output.")
+   (thread
+    :initform nil
+    :accessor worker-error-relay--thread
+    :documentation "The thread draining the worker's error stream."))
+  (:documentation "The drain of one worker process's error output."))
+
+(defun worker--error-relay-start (stream forward)
+  "Drain worker error STREAM into FORWARD, retaining the boot output."
+  (let ((relay (make-instance 'worker-error-relay :forward forward)))
+    (setf (worker-error-relay--thread relay)
+          (make-thread
+           (lambda ()
+             (unwind-protect
+                  (loop for line = (ignore-errors (read-line stream nil nil))
+                        while line
+                        do (worker--error-relay-retain relay line)
+                           (ignore-errors
+                            (write-line line forward)
+                            (force-output forward)))
+               (ignore-errors (close stream))))
+           :name "SBCL worker error relay"))
+    relay))
+
+(defun worker--error-relay-retain (relay line)
+  "Keep LINE in RELAY's boot output while booting and within the limit."
+  (with-lock-held ((worker-error-relay--lock relay))
+    (let ((retained (worker-error-relay--retained relay)))
+      (when (and retained
+                 (< (worker-error-relay--retained-length relay)
+                    *worker-startup-error-output-limit*))
+        (write-line line retained)
+        (incf (worker-error-relay--retained-length relay)
+              (1+ (length line))))))
+  nil)
+
+(defun worker--error-relay-booted (relay)
+  "Stop retaining RELAY's output once the worker completed its handshake."
+  (with-lock-held ((worker-error-relay--lock relay))
+    (setf (worker-error-relay--retained relay) nil))
+  nil)
+
+(defun worker--wait-until (predicate)
+  "Poll PREDICATE until it is true or the exit wait elapses."
+  (let ((deadline (+ (get-internal-real-time)
+                     (* *worker-exit-wait-seconds*
+                        internal-time-units-per-second))))
+    (loop until (or (funcall predicate)
+                    (>= (get-internal-real-time) deadline))
+          do (sleep 0.02))))
+
+(defun worker--error-relay-boot-output (relay)
+  "Return RELAY's bounded boot output once its drain finishes, or NIL."
+  (let ((thread (worker-error-relay--thread relay)))
+    (worker--wait-until (lambda () (not (thread-alive-p thread)))))
+  (with-lock-held ((worker-error-relay--lock relay))
+    (let* ((retained (worker-error-relay--retained relay))
+           (output (and retained
+                        (string-trim '(#\Newline #\Return #\Space)
+                                     (get-output-stream-string retained)))))
+      (and output
+           (plusp (length output))
+           (worker--bounded-string
+            output :limit *worker-startup-error-report-limit*)))))
+
+(defun worker--exit-status (process)
+  "Return exited PROCESS's status, or NIL while it is still running."
+  (worker--wait-until (lambda () (not (uiop:process-alive-p process))))
+  (unless (uiop:process-alive-p process)
+    (uiop:wait-process process)))
+
+(defun worker--early-exit-message (process relay)
+  "Describe a worker PROCESS that closed its output before the handshake."
+  (let ((status (worker--exit-status process))
+        (output (worker--error-relay-boot-output relay)))
+    (format nil "The SBCL worker exited before its handshake~@[ (exit status ~D)~].~
+                 ~:[ It wrote no error output.~;~:*~%Its error output:~%~A~]"
+            status output)))
+
+
+;;;; -- Worker Lifecycle --
+
 (defun sbcl-worker-start (worker)
-  "Start WORKER when necessary and verify its protocol handshake."
+  "Start WORKER when necessary and verify its protocol handshake.
+
+The worker's error output is forwarded to the current *ERROR-OUTPUT*. When the
+worker exits before its handshake, the signaled condition reports its exit
+status and the error output it wrote while booting."
   (unless (sbcl-worker-running-p worker)
     (let ((environment (worker--environment worker)))
       (handler-case
-          (let ((process
-                  (uiop:launch-program
-                   (worker--command worker)
-                   :directory
-                   (sbcl-worker-environment-working-directory environment)
-                   :input :stream
-                   :output :stream
-                   :error-output *error-output*
-                   :wait nil)))
+          (let* ((process
+                   (uiop:launch-program
+                    (worker--command worker)
+                    :directory
+                    (sbcl-worker-environment-working-directory environment)
+                    :input :stream
+                    :output :stream
+                    :error-output :stream
+                    :wait nil))
+                 (relay
+                   (worker--error-relay-start
+                    (uiop:process-info-error-output process)
+                    *error-output*)))
             (setf (worker--process worker) process
                   (worker--input worker) (uiop:process-info-input process)
                   (worker--output worker) (uiop:process-info-output process))
             (loop for line = (read-line (worker--output worker) nil nil)
                   do (unless line
                        (worker--signal-error
-                        "The SBCL worker exited before its handshake."
+                        (worker--early-exit-message process relay)
                         :operation :start
                         :stage :handshake))
                      (let* ((*read-eval* nil)
@@ -168,6 +293,7 @@
                             "The SBCL worker reported the wrong protocol or image identity."
                             :operation :start
                             :stage :handshake))
+                         (worker--error-relay-booted relay)
                          (return)))))
         (sbcl-worker-error (condition)
           (sbcl-worker-stop worker)
