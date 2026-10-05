@@ -23,6 +23,47 @@
   (declare (ignore identity cancelled-p))
   (list :payload payload :context context))
 
+(defun host-test-configured-runtime ()
+  "Exercise callback bootstrap with a non-default evaluation package and protocol."
+  (let* ((root (test-root))
+         (command (test-pristine-command))
+         (environment
+           (sbcl-worker-environment-create
+            :pristine-command
+            (append (butlast command)
+                    '("(sbcl-workers:sbcl-worker-main :evaluation-package \"SBCL-WORKERS\" :protocol-tag :configured-worker :protocol-version 9 :source-root-environment-variable \"CONFIGURED_SBCL_SOURCE_ROOT\")"))
+            :working-directory root :image-root (merge-pathnames "images/" root)
+            :evaluation-package "SBCL-WORKERS" :protocol-tag :configured-worker
+            :protocol-version 9
+            :source-root-environment-variable "CONFIGURED_SBCL_SOURCE_ROOT"))
+         (worker (sbcl-worker-create environment :name "configured-runtime"))
+         (state-form "(list (package-name *package*) *worker-evaluation-package-name* *worker-protocol-tag* *worker-protocol-version* *worker-source-root-environment-variable* *worker-image-identifier*)")
+         (expected '("SBCL-WORKERS" "SBCL-WORKERS" :configured-worker 9
+                     "CONFIGURED_SBCL_SOURCE_ROOT" "configured-image")))
+    (ensure-directories-exist (merge-pathnames "placeholder" root))
+    (unwind-protect
+         (progn
+           (sbcl-worker-request worker :eval
+                                '(:forms ("(setf sbcl-workers::*worker-image-identifier* \"configured-image\")")))
+           (test-assert
+            (equal (host-test-value (sbcl-worker-request worker :eval
+                                                        (list :forms (list state-form)))) expected)
+            "Configured runtime before optional bootstrap")
+           (dotimes (index 2)
+             (declare (ignore index))
+             (test-assert
+              (equal (host-test-value
+                      (host-test-eval
+                       worker (format nil "(progn (sbcl-worker-host-call :configured) ~A)" state-form)
+                       #'host-test-dispatch)) expected)
+              "Callback bootstrap preserves configured package, protocol and image identity"))
+           (test-assert
+            (equal (host-test-value (sbcl-worker-request worker :eval
+                                                        (list :forms (list state-form)))) expected)
+            "Ordinary requests retain runtime configuration after callbacks"))
+      (sbcl-worker-stop worker)
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
 (defun run-host-callback-tests ()
   "Exercise host callbacks and failure cleanup through persistent subprocesses."
   (let* ((*tests-run* 0) (root (test-root))
@@ -234,6 +275,7 @@
               (lambda () (not (uiop:process-alive-p process))))
              (test-assert (not (uiop:process-alive-p process))
                           "Host disconnect terminates worker without hangs"))
+           (host-test-configured-runtime)
            (format t "~&sbcl-workers host callbacks: ~D assertions passed.~%" *tests-run*))
       (sbcl-worker-stop worker)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))

@@ -295,6 +295,26 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                             :remote-type (string (type-of condition)))))))
             (host--write reply (worker--input worker) (+ 4096 (getf session :result-limit)))))))))
 
+(defun host--bootstrap-source (pathname)
+  "Return one bootstrap form retaining the worker's configured runtime identity.
+ASDF may reload the base system's defaults while installing this optional system."
+  (format nil
+          "(let ((evaluation-package sbcl-workers::*worker-evaluation-package-name*)~%
+                 (protocol-tag sbcl-workers::*worker-protocol-tag*)~%
+                 (protocol-version sbcl-workers::*worker-protocol-version*)~%
+                 (source-environment sbcl-workers::*worker-source-root-environment-variable*)~%
+                 (image-identifier sbcl-workers::*worker-image-identifier*))~%
+             (unwind-protect~%
+                  (progn (asdf:load-asd ~S)~%
+                         (asdf:load-system :sbcl-workers/host-callbacks))~%
+               (sbcl-workers:sbcl-worker-runtime-configure~%
+                :evaluation-package evaluation-package~%
+                :protocol-tag protocol-tag~%
+                :protocol-version protocol-version~%
+                :source-root-environment-variable source-environment)~%
+               (setf sbcl-workers::*worker-image-identifier* image-identifier)))"
+          (namestring pathname)))
+
 (defun sbcl-worker-host-request
     (worker operation arguments &key dispatcher context worker-context cancel-p
                                   (request-limit 1048576) (result-limit 1048576))
@@ -318,8 +338,7 @@ Any nonlocal exit cleans up this evaluation and its process."
     ;; Bootstrap the optional runtime through ordinary evaluation, including pristine cores.
     (let* ((path (asdf:system-source-file :sbcl-workers/host-callbacks))
            (reply (sbcl-worker-request worker :eval
-                    (list :forms (list (format nil "(asdf:load-asd ~S)" (namestring path))
-                                       "(asdf:load-system :sbcl-workers/host-callbacks)")))))
+                     (list :forms (list (host--bootstrap-source path))))))
       (unless (eq (getf (rest reply) :status) :ok) (host--fail :bootstrap)))
     (let* ((nonce (format nil "~36R-~A" (get-universal-time) (gensym "HOST-")))
            (*host-session* (list :worker worker :session nonce :dispatcher dispatcher
