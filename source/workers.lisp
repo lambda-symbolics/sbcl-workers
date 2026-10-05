@@ -537,9 +537,20 @@ old process reaping or stream cleanup."
 
 ;;;; -- Portable Requests and Image Snapshots --
 
+(defgeneric worker--request-allowed (worker)
+  (:documentation "Check optional protocol admission before acquiring WORKER's lock.")
+  (:method ((worker sbcl-worker)) (declare (ignore worker)) t))
+
+(defgeneric worker--read-response (worker request-id)
+  (:documentation "Read the response, allowing optional correlated host exchanges.")
+  (:method ((worker sbcl-worker) request-id)
+    (declare (ignore request-id))
+    (let ((*read-eval* nil)) (read (worker--output worker) t nil))))
+
 (defun sbcl-worker-request (worker operation arguments)
   "Send OPERATION and portable ARGUMENTS to WORKER and return its response."
-  (with-lock-held ((worker--lock worker))
+  (worker--request-allowed worker)
+  (with-recursive-lock-held ((worker--lock worker))
     (sbcl-worker-start worker)
     (let* ((request-id (worker--next-request-id worker))
            (request (list :request
@@ -554,8 +565,7 @@ old process reaping or stream cleanup."
               (prin1 request (worker--input worker))
               (terpri (worker--input worker))
               (finish-output (worker--input worker)))
-            (let ((*read-eval* nil)
-                  (response (read (worker--output worker) t nil)))
+            (let ((response (worker--read-response worker request-id)))
               (unless (and (listp response)
                            (eq (first response) :response)
                            (= (or (getf (rest response) :id) -1) request-id))
