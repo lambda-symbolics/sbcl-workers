@@ -87,10 +87,73 @@ The built-in runtime handles:
 
 Responses contain only readable Common Lisp data.
 
+* Optional host callbacks
+
+Load =sbcl-workers/host-callbacks= on the host, then execute an ordinary operation
+with =sbcl-worker-host-request=. The library loads the optional runtime into the
+persistent worker through ordinary evaluation; pristine workers and saved images
+use the same stdin/stdout transport and process manager.
+
+#+BEGIN_SRC lisp
+(asdf:load-system :sbcl-workers/host-callbacks)
+(sbcl-workers:sbcl-worker-host-request
+ *repl* :eval
+ '(:forms ("(sbcl-workers:sbcl-worker-host-call '(:lookup \"name\"))"))
+ :dispatcher (lambda (payload &key context identity cancelled-p)
+               (declare (ignore context identity))
+               (if (funcall cancelled-p)
+                   (error "Cancelled")
+                   (list :found payload)))
+ :context opaque-host-accounting-context
+ :worker-context '(:budget 100)
+ :cancel-p (lambda () request-cancelled-p)
+ :request-limit 1048576
+ :result-limit 1048576)
+#+END_SRC
+
+The dispatcher receives the worker's portable payload, exact correlation identity
+=(:session STRING :request-id INTEGER :call-id INTEGER)=, opaque host-local context,
+and a cancellation predicate. It runs in a supervised host thread. Capture and
+bind application dynamic context explicitly in the dispatcher. The library knows
+nothing about application tools, permissions, tracing or accounting policy.
+Use =sbcl-worker-host-context= in the worker to retrieve =:worker-context=.
+
+Call IDs start at one within each evaluation. Sequential callbacks are permitted.
+A callback may invoke a different worker. Nested worker callbacks, callbacks from
+spawned worker threads, and requests to the same worker during host dispatch are
+rejected. The host validates the complete identity and expected sequence before
+calling the dispatcher; the worker validates the complete reply identity.
+
+Portable values are NIL, T, keywords, strings, rational numbers, finite single
+and double floats, proper lists and simple vectors. Trees must be acyclic, at
+most 64 levels deep, and at most 65536 visited nodes. Request and result limits
+count printed characters and default to 1 MiB, configurable from 256 characters
+to 16 MiB. Protocol envelopes have a separate 4096-character allowance. Printing
+is bounded before transport publication. Callback readers enforce the character
+and nesting limits and reject reader evaluation, labels and sized-array syntax.
+An oversized final evaluation response is replaced by a bounded error response.
+
+Catch =sbcl-worker-host-error= in worker code to handle host failures. Inspect
+=sbcl-worker-host-error-code=, =sbcl-worker-host-error-identity= and
+=sbcl-worker-host-error-remote-type=. A host exception produces =:host-failure=
+and its class name, without transporting its arbitrary report. Common protocol
+codes include =:bound=, =:non-portable=, =:identity= and =:reentrancy=.
+
+The host polls =:cancel-p= while awaiting the worker and during dispatch.
+Cancellation raises =:cancelled= on the host, marks the dispatcher cancellation
+predicate, interrupts the supervised thread with unwinding, and discards the
+worker process. Worker death similarly interrupts active host work. A nonlocal
+host exit cleans up the evaluation. Host pipe EOF raises =:disconnected= in the
+worker, which then exits its normal protocol loop. Supply a deadline predicate
+when host operations or worker computations need a time limit. Dispatchers must
+permit ordinary Lisp thread interruption and clean up their external resources
+in unwind-protect forms.
+
 * Tests
 
 #+BEGIN_SRC lisp
 (asdf:test-system :sbcl-workers)
+(asdf:test-system :sbcl-workers/host-callbacks)
 #+END_SRC
 
 Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].

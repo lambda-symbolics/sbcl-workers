@@ -37,3 +37,17 @@
 (asdf:defsystem #:sbcl-workers/read-eval-fixture
   :description "Fixture containing standard reader evaluation syntax"
   :components ((:file "tests/read-eval-fixture")))
+
+
+(asdf:defsystem #:sbcl-workers/host-callbacks
+  :description "Optional correlated callbacks over the existing worker transport"
+  :depends-on (#:sbcl-workers #:trivial-gray-streams)
+  :components ((:file "source/host-callbacks"))
+  :in-order-to ((asdf:test-op (asdf:test-op #:sbcl-workers/host-callbacks/tests))))
+
+(asdf:defsystem #:sbcl-workers/host-callbacks/tests
+  :depends-on (#:sbcl-workers/host-callbacks #:sbcl-workers/tests)
+  :components ((:file "tests/host-callbacks-tests"))
+  :perform (asdf:test-op (operation component)
+             (declare (ignore operation component))
+             (uiop:symbol-call '#:sbcl-workers/tests '#:run-host-callback-tests)))

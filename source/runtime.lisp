@@ -209,6 +209,12 @@ the form count, so a failure response can say which form failed."
      (sb-debug:print-backtrace :stream stream :count 20))
    :limit 6000))
 
+(defgeneric worker--invoke-request (operation arguments request-id)
+  (:documentation "Dispatch a request through optional runtime protocols.")
+  (:method (operation arguments request-id)
+    (declare (ignore request-id))
+    (worker--dispatch operation arguments)))
+
 (defun sbcl-worker-handle-request (request)
   "Execute one portable worker REQUEST and return a protocol response."
   (let ((request-id (getf (rest request) :id))
@@ -230,7 +236,7 @@ the form count, so a failure response can say which form failed."
                                                     ""))
                                           failed-position
                                           *worker-form-position*))))
-              (worker--dispatch operation arguments))
+              (worker--invoke-request operation arguments request-id))
           (append (list :response
                         :id request-id
                         :status :ok
@@ -272,6 +278,12 @@ settings, so printing a condition or other unreadable object in user code works.
   (finish-output)
   nil)
 
+(defgeneric worker--emit-response (operation arguments response)
+  (:documentation "Emit an ordinary or optional protocol response.")
+  (:method (operation arguments response)
+    (declare (ignore operation arguments))
+    (worker--write-packet response)))
+
 (defun sbcl-worker-main
     (&key
        (evaluation-package *worker-evaluation-package-name*)
@@ -300,7 +312,11 @@ settings, so printing a condition or other unreadable object in user code works.
                                :status :error
                                :message "Malformed worker request."
                                :backtrace ""))))
-               (worker--write-packet response)
+               (let ((properties (when (and (consp request)
+                                            (eq (first request) :request))
+                                   (rest request))))
+                 (worker--emit-response (getf properties :operation)
+                                        (getf properties :arguments) response))
                (let ((pending *worker-pending-save*))
                  (when pending
                    ;; Clear it before saving: the saved heap must not carry
