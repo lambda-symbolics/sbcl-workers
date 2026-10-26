@@ -51,13 +51,17 @@
   (:documentation "One named persistent, heap-isolated SBCL process."))
 
 (defun sbcl-worker-name-p (value)
-  "Return true when VALUE is safe as one named worker."
+  "Return true when VALUE is safe as one named worker.
+
+Names only route requests, so periods may separate their parts, as in
+project.tests, but a name never consists of periods alone."
   (and (worker--non-empty-string-p value)
        (<= (length value) 80)
        (every (lambda (character)
                 (or (alphanumericp character)
-                    (find character "-_")))
+                    (find character "-_.")))
               value)
+       (notevery (lambda (character) (char= character #\.)) value)
        t))
 
 (defun worker--validate-name (name)
@@ -65,7 +69,7 @@
   (unless (sbcl-worker-name-p name)
     (worker--signal-error
      (format nil
-             "Invalid SBCL worker name ~S. Use 1 to 80 letters, digits, hyphens, or underscores."
+             "Invalid SBCL worker name ~S. Use 1 to 80 letters, digits, hyphens, underscores, or periods."
              name)
      :operation :workers
      :stage :name))

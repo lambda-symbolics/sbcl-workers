@@ -85,10 +85,10 @@
 
 (defun test-worker-names ()
   "Test the public worker-name predicate and structured validation failure."
-  (dolist (name '("default" "alpha-1" "worker_name"))
+  (dolist (name '("default" "alpha-1" "worker_name" "project.tests" ".hidden"))
     (test-assert (eq (sbcl-worker-name-p name) t)
                  (format nil "~S is a valid worker name" name)))
-  (dolist (name (list nil "" "with space" "slash/name"
+  (dolist (name (list nil "" "with space" "slash/name" "." ".."
                       (make-string 81 :initial-element #\a)))
     (test-assert (null (sbcl-worker-name-p name))
                  (format nil "~S is not a valid worker name" name)))
