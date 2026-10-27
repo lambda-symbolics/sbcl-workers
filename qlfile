@@ -1,0 +1,6 @@
+ql bordeaux-threads 2026-01-01
+ql trivial-gray-streams 2026-01-01
+git ls-compat https://github.com/lambda-symbolics/ls-compat.git :ref d67c607188ed434aa541c7048d422954d31bebcc
+git ls-flock https://github.com/lambda-symbolics/ls-flock.git :ref 0e3e0ada0f5b693cb3f32f46aefbb8dbebcc20f2
+git sexp-config https://github.com/lambda-symbolics/sexp-config.git :ref d36be049fb4f31e7f51d0f9b718fbf36bd642fca
+git sexp-store https://github.com/lambda-symbolics/sexp-store.git :ref 4d38e6544d87412d99acef9f097272df41359eff
