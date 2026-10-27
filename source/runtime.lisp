@@ -251,12 +251,12 @@ the form count, so a failure response can say which form failed."
                       :condition-type (string (type-of condition))
                       :message (worker--condition-message condition)
                       :output (worker--captured-output *worker-capture-stream*)
-                      :backtrace (if (eq (car signaled) condition)
-                                     (cdr signaled)
+                      :backtrace (if (eq (first signaled) condition)
+                                     (rest signaled)
                                      (worker--condition-backtrace)))
-                (when (and failed-position (eq (car signaled) condition))
-                  (list :form-index (car failed-position)
-                        :form-count (cdr failed-position))))))))
+                (when (and failed-position (eq (first signaled) condition))
+                  (list :form-index (first failed-position)
+                        :form-count (rest failed-position))))))))
 
 (defun worker--condition-message (condition)
   "Return CONDITION's report, or a description when the report itself fails."
