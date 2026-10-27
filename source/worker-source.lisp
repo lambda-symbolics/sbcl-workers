@@ -136,7 +136,9 @@ bound keeps the head and the tail and names the dropped middle."
 A definition loaded from a project or library records a path that still
 exists, and that file is read as it is. SBCL's own definitions record paths
 from the build host, which are mapped into the configured matching source tree."
-  (let ((existing (ignore-errors (probe-file recorded-pathname))))
+  (let ((existing (handler-case (probe-file recorded-pathname)
+                    (file-error ()
+                      nil))))
     (if (and existing (pathname-name existing))
         existing
         (let* ((source-root (worker-source--root))

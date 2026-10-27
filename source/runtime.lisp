@@ -231,6 +231,7 @@ the form count, so a failure response can say which form failed."
             (handler-bind ((error (lambda (condition)
                                     (setf signaled
                                           (cons condition
+                                                ; mallet:suppress no-ignore-errors -- a failed backtrace must not replace the request's error
                                                 (or (ignore-errors
                                                      (worker--condition-backtrace))
                                                     ""))
@@ -264,6 +265,7 @@ the form count, so a failure response can say which form failed."
     (error (report-failure)
       (format nil "~A (its report failed: ~A)"
               (type-of condition)
+              ; mallet:suppress no-ignore-errors -- the message keeps the type name when this report fails too
               (ignore-errors (princ-to-string report-failure))))))
 
 (defun worker--write-packet (form)

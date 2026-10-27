@@ -184,13 +184,20 @@ project.tests, but a name never consists of periods alone."
           (make-thread
            (lambda ()
              (unwind-protect
-                  (loop for line = (ignore-errors (read-line stream nil nil))
+                  (loop for line = (handler-case (read-line stream nil nil)
+                                     (stream-error ()
+                                       nil))
                         while line
                         do (worker--error-relay-retain relay line)
-                           (ignore-errors
-                            (write-line line forward)
-                            (force-output forward)))
-               (ignore-errors (close stream))))
+                           (handler-case
+                               (progn
+                                 (write-line line forward)
+                                 (force-output forward))
+                             (stream-error ()
+                               nil)))
+               (handler-case (close stream)
+                 (stream-error ()
+                   nil))))
            :name "SBCL worker error relay"))
     relay))
 
@@ -315,11 +322,15 @@ status and the error output it wrote while booting."
   "Terminate detached PROCESS and close its protocol streams."
   (when process
     (when (uiop:process-alive-p process)
+      ; mallet:suppress no-ignore-errors -- best-effort cleanup of a process that may already be gone
       (ignore-errors (uiop:terminate-process process :urgent t)))
+    ; mallet:suppress no-ignore-errors -- best-effort cleanup of a process that may already be gone
     (ignore-errors (uiop:wait-process process)))
   (dolist (stream (list input output))
     (when (and stream (open-stream-p stream))
-      (ignore-errors (close stream))))
+      (handler-case (close stream)
+        (stream-error ()
+          nil))))
   nil)
 
 (defun worker--detach-process (worker)
@@ -676,6 +687,7 @@ response. The exit is the completion signal, so this reaps the process and
 requires the unpublished core to exist."
   (let ((process (worker--process worker)))
     (when process
+      ; mallet:suppress no-ignore-errors -- the check for CORE below reports a failed save
       (ignore-errors (uiop:wait-process process))))
   (sbcl-worker-stop worker)
   (unless (probe-file core)
@@ -699,7 +711,9 @@ requires the unpublished core to exist."
   "Detach inherited process descriptors without signaling the subprocess."
   (dolist (stream (list (worker--input worker) (worker--output worker)))
     (when (and stream (open-stream-p stream))
-      (ignore-errors (close stream))))
+      (handler-case (close stream)
+        (stream-error ()
+          nil))))
   (setf (worker--process worker) nil
         (worker--input worker) nil
         (worker--output worker) nil

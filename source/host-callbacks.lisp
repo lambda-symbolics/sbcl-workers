@@ -275,6 +275,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
       (with-lock-held (lock) (setf cancelled t))
       (when thread
         (when (thread-alive-p thread) (bordeaux-threads:destroy-thread thread))
+        ; mallet:suppress no-ignore-errors -- joining a destroyed thread reports its abnormal exit
         (ignore-errors (bordeaux-threads:join-thread thread)))
       (with-lock-held (*host-registry-lock*) (remhash worker *host-active-workers*)))))
 
