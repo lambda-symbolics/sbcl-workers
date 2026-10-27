@@ -13,7 +13,7 @@
        (format nil "No Common Lisp package named ~S exists."
                *worker-evaluation-package-name*)
        :operation :runtime
-       :stage :configuration)))
+       :stage     :configuration)))
 
 (defun worker--read-form (source &key (read-eval t))
   "Read exactly one Common Lisp form from SOURCE.
@@ -22,8 +22,8 @@ Text after the first form that is not whitespace or a comment, including a
 stray closing parenthesis, is refused with the position where the first form
 ended and the start of the trailing text."
   (let ((*read-eval* read-eval)
-        (*package* (worker--evaluation-package))
-        (end-marker (cons nil nil)))
+        (*package*   (worker--evaluation-package))
+        (end-marker  (cons nil nil)))
     (multiple-value-bind (form position)
         (read-from-string source t nil :preserve-whitespace t)
       (unless (eq end-marker
@@ -71,7 +71,7 @@ bound keeps the head and the tail and names the dropped middle."
   (when (worker--non-empty-string-p name)
     (let ((kind (find (string-upcase name)
                       +worker-source-kinds+
-                      :key #'symbol-name
+                      :key  #'symbol-name
                       :test #'string=)))
       (unless kind
         (worker--signal-error
@@ -123,7 +123,7 @@ bound keeps the head and the tail and names the dropped middle."
       (worker--signal-error
        (format nil "Cannot map recorded SBCL source pathname ~S." pathname)
        :operation :source
-       :pathname pathname))
+       :pathname  pathname))
     (pathname
      (format nil "~{~A/~}~A~@[.~A~]"
              (subseq directories start)
@@ -150,7 +150,7 @@ from the build host, which are mapped into the configured matching source tree."
              (format nil "Recorded source ~S is absent from matching SBCL source."
                      recorded-pathname)
              :operation :source
-             :pathname pathname))
+             :pathname  pathname))
           (truename pathname)))))
 
 (defun worker-source--display-pathname (pathname)
@@ -171,8 +171,8 @@ from the build host, which are mapped into the configured matching source tree."
 (defun worker-source--line-window (source offset)
   "Return a numbered source window surrounding OFFSET."
   (let* ((target-line (worker-source--line-number source offset))
-         (first-line (max 1 (- target-line 12)))
-         (last-line (+ target-line 28)))
+         (first-line  (max 1 (- target-line 12)))
+         (last-line   (+ target-line 28)))
     (with-output-to-string (output)
       (with-input-from-string (input source)
         (loop for line = (read-line input nil nil)
@@ -186,7 +186,7 @@ from the build host, which are mapped into the configured matching source tree."
 (defun worker-source--complete-form (source offset)
   "Return the complete readable top-level form at OFFSET when possible."
   (handler-case
-      (let ((*package* (find-package '#:cl-user))
+      (let ((*package*   (find-package '#:cl-user))
             (*read-eval* nil))
         (multiple-value-bind (form end)
             (read-from-string source t nil :start offset)
@@ -203,8 +203,10 @@ from the build host, which are mapped into the configured matching source tree."
                name))
          (needle
            (etypecase symbol
-             (symbol (symbol-name symbol))
-             (string symbol))))
+             (symbol
+              (symbol-name symbol))
+             (string
+              symbol))))
     (or (search needle source :test #'char-equal) 0)))
 
 (defun worker-source--render-location (source-location kind name)
@@ -214,14 +216,14 @@ from the build host, which are mapped into the configured matching source tree."
                              '#:definition-source-pathname
                              source-location))
          (pathname (and recorded (worker-source--pathname recorded)))
-         (source (and pathname (uiop:read-file-string pathname)))
+         (source   (and pathname (uiop:read-file-string pathname)))
          (recorded-offset
            (uiop:symbol-call '#:sb-introspect
                              '#:definition-source-character-offset
                              source-location))
-         (offset (and source
-                      (or recorded-offset
-                          (worker-source--fallback-offset name source)))))
+         (offset   (and source
+                        (or recorded-offset
+                            (worker-source--fallback-offset name source)))))
     (unless (and pathname source offset)
       (worker--signal-error
        "SBCL recorded no readable file location for this definition."
@@ -242,13 +244,13 @@ from the build host, which are mapped into the configured matching source tree."
 (defun sbcl-worker-source (name-source kind-source)
   "Return matching source locations for NAME-SOURCE and optional KIND-SOURCE."
   (require :sb-introspect)
-  (let* ((name (worker-source--name name-source))
+  (let* ((name          (worker-source--name name-source))
          (selected-kind (worker-source--kind kind-source))
-         (kinds (if selected-kind
-                    (list selected-kind)
-                    +worker-source-kinds+))
-         (locations nil)
-         (seen (make-hash-table :test #'equal)))
+         (kinds         (if selected-kind
+                            (list selected-kind)
+                            +worker-source-kinds+))
+         (locations     nil)
+         (seen          (make-hash-table :test #'equal)))
     (dolist (kind kinds)
       (dolist (source-location
                (uiop:symbol-call '#:sb-introspect

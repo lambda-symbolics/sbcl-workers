@@ -11,7 +11,7 @@
    (identity :initarg :identity :initform nil :reader sbcl-worker-host-error-identity
              :documentation "Exact session, evaluation and callback identity.")
    (remote-type :initarg :remote-type :initform nil
-                :reader sbcl-worker-host-error-remote-type
+                :reader        sbcl-worker-host-error-remote-type
                 :documentation "The host condition class name, when available."))
   (:documentation "A bounded host-call protocol, cancellation or dispatch failure."))
 
@@ -40,7 +40,8 @@
                  (return-from host--portable-p nil))
                (cond
                  ((or (null object) (eq object t) (keywordp object)
-                      (stringp object) (rationalp object)) t)
+                      (stringp object) (rationalp object))
+                  t)
                  ((typep object '(or single-float double-float))
                   (and (ignore-errors
                         (<= (- most-positive-double-float) object
@@ -66,7 +67,8 @@
                   (unwind-protect
                        (every (lambda (item) (walk item (1+ depth))) object)
                     (remhash object seen)))
-                 (t nil))))
+                 (t
+                  nil))))
       (and (walk value 0) t))))
 
 (defun host--encode (value limit)
@@ -105,15 +107,20 @@
                   (host-input--escaped stream)))
       (unless (eq char :eof)
         (cond
-          ((host-input--escaped stream) (setf (host-input--escaped stream) nil))
-          ((eql char #\\) (setf (host-input--escaped stream) t))
+          ((host-input--escaped stream)
+           (setf (host-input--escaped stream) nil))
+          ((eql char #\\)
+           (setf (host-input--escaped stream) t))
           ((host-input--quoted stream)
            (when (eql char (host-input--quoted stream))
              (setf (host-input--quoted stream) nil)))
-          ((find char '(#\" #\|)) (setf (host-input--quoted stream) char))
-          ((eql char #\() (when (> (incf (host-input--depth stream)) 64)
-                            (host--fail :bound)))
-          ((eql char #\)) (decf (host-input--depth stream)))))
+          ((find char '(#\" #\|))
+           (setf (host-input--quoted stream) char))
+          ((eql char #\()
+           (when (> (incf (host-input--depth stream)) 64)
+             (host--fail :bound)))
+          ((eql char #\))
+           (decf (host-input--depth stream)))))
       char)))
 
 (defmethod trivial-gray-streams:stream-unread-char ((stream host-bounded-input) char)
@@ -149,11 +156,16 @@
   (finish-output stream))
 
 (defvar *host-runtime* nil "Dynamic worker-side callback envelope.")
+
 (defvar *host-runtime-call-id* 0 "Monotonic callback sequence within one evaluation.")
+
 (defvar *host-runtime-in-call* nil "True while awaiting a callback result.")
+
 (defvar *host-session* nil "Dynamic host-side callback envelope.")
+
 (defvar *host-active-workers* (make-hash-table :test #'eq)
   "Workers currently dispatching callbacks, protected by the registry lock.")
+
 (defvar *host-registry-lock* (make-lock "Host callback registry")
   "Lock for callback reentrancy admission.")
 
@@ -173,13 +185,13 @@ threads are rejected. Host EOF raises a typed disconnected condition."
   (when *host-runtime-in-call* (host--fail :reentrancy))
   (host--encode payload (getf *host-runtime* :request-limit))
   (let* ((*host-runtime-in-call* t)
-         (identity (host--identity (getf *host-runtime* :session)
-                                  (getf *host-runtime* :request-id)
-                                  (incf *host-runtime-call-id*)))
-         (input (getf *host-runtime* :input))
-         (output (getf *host-runtime* :output))
-         (request-limit (getf *host-runtime* :request-limit))
-         (result-limit (getf *host-runtime* :result-limit)))
+         (identity               (host--identity (getf *host-runtime* :session)
+                                                (getf *host-runtime* :request-id)
+                                                (incf *host-runtime-call-id*)))
+         (input                  (getf *host-runtime* :input))
+         (output                 (getf *host-runtime* :output))
+         (request-limit          (getf *host-runtime* :request-limit))
+         (result-limit           (getf *host-runtime* :result-limit)))
     (host--write (list :host-call :identity identity :payload payload)
                  output (+ request-limit 4096))
     (let ((reply (host--read input (+ result-limit 4096))))
@@ -215,7 +227,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
     (sbcl-worker-host-error (condition)
       (host--write (list :response :id (getf (rest response) :id) :status :error
                         :condition-type "SBCL-WORKER-HOST-ERROR"
-                        :message (sbcl-worker-error-message condition))
+                        :message        (sbcl-worker-error-message condition))
                    *standard-output* 4096))))
 
 (defun host--dispatch (worker payload identity session)
@@ -236,7 +248,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                                (handler-case
                                    (setf result
                                          (funcall (getf session :dispatcher) payload
-                                                  :context (getf session :context)
+                                                  :context  (getf session :context)
                                                   :identity (host--identity
                                                              (getf identity :session)
                                                              (getf identity :request-id)
@@ -247,7 +259,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                                (setf returned t))
                           (unless returned
                             (setf failure (make-condition 'sbcl-worker-host-error
-                                                         :code :host-aborted
+                                                         :code    :host-aborted
                                                          :message "Host dispatcher aborted.")))
                           (with-lock-held (lock) (setf done t)))))
                     :name "Supervised worker host callback")))
@@ -274,7 +286,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                                 (lambda () (host--poll worker session)))))
         (when (eq (first packet) :response) (return packet))
         (let ((identity (host--identity (getf session :session) request-id (incf call-id)))
-              (payload (getf (rest packet) :payload)))
+              (payload  (getf (rest packet) :payload)))
           (unless (and (eq (first packet) :host-call)
                        (equal (getf (rest packet) :identity) identity))
             (host--fail :identity identity))
@@ -290,8 +302,8 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                                          '(:cancelled :worker-dead :disconnected)))
                         (error condition))
                       (list :host-result :identity identity :status :error
-                            :code (if (typep condition 'sbcl-worker-host-error)
-                                      (sbcl-worker-host-error-code condition) :host-failure)
+                            :code        (if (typep condition 'sbcl-worker-host-error)
+                                             (sbcl-worker-host-error-code condition) :host-failure)
                             :remote-type (string (type-of condition)))))))
             (host--write reply (worker--input worker) (+ 4096 (getf session :result-limit)))))))))
 
@@ -336,15 +348,15 @@ Any nonlocal exit cleans up this evaluation and its process."
   (host--encode worker-context request-limit)
   (with-recursive-lock-held ((worker--lock worker))
     ;; Bootstrap the optional runtime through ordinary evaluation, including pristine cores.
-    (let* ((path (asdf:system-source-file :sbcl-workers/host-callbacks))
+    (let* ((path  (asdf:system-source-file :sbcl-workers/host-callbacks))
            (reply (sbcl-worker-request worker :eval
                      (list :forms (list (host--bootstrap-source path))))))
       (unless (eq (getf (rest reply) :status) :ok) (host--fail :bootstrap)))
-    (let* ((nonce (format nil "~36R-~A" (get-universal-time) (gensym "HOST-")))
+    (let* ((nonce          (format nil "~36R-~A" (get-universal-time) (gensym "HOST-")))
            (*host-session* (list :worker worker :session nonce :dispatcher dispatcher
                                  :context context :cancel-p cancel-p
                                  :request-limit request-limit :result-limit result-limit))
-           (complete nil))
+           (complete       nil))
       (unwind-protect
            (prog1
                (sbcl-worker-request worker :host-request

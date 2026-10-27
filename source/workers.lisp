@@ -2,51 +2,51 @@
 
 (defclass sbcl-worker ()
   ((environment
-    :initarg :environment
-    :accessor worker--environment
-    :type sbcl-worker-environment
+    :initarg       :environment
+    :accessor      worker--environment
+    :type          sbcl-worker-environment
     :documentation "The host paths and runtime settings used by the worker.")
    (name
-    :initarg :name
-    :reader sbcl-worker-name
-    :type string
+    :initarg       :name
+    :reader        sbcl-worker-name
+    :type          string
     :documentation "The stable name used to route requests.")
    (image-identifier
-    :initarg :image-identifier
-    :reader sbcl-worker-used-image-identifier
-    :accessor worker--image-identifier
-    :type string
+    :initarg       :image-identifier
+    :reader        sbcl-worker-used-image-identifier
+    :accessor      worker--image-identifier
+    :type          string
     :documentation "The pristine or saved image used at process start.")
    (core-pathname
-    :initarg :core-pathname
-    :initform nil
-    :reader sbcl-worker-core-pathname
-    :accessor worker--core-pathname
-    :type (or null pathname)
+    :initarg       :core-pathname
+    :initform      nil
+    :reader        sbcl-worker-core-pathname
+    :accessor      worker--core-pathname
+    :type          (or null pathname)
     :documentation "The compatible saved core, or NIL for a pristine worker.")
    (process
-    :initform nil
-    :accessor worker--process
-    :type t
+    :initform      nil
+    :accessor      worker--process
+    :type          t
     :documentation "The active UIOP process info, or NIL.")
    (input
-    :initform nil
-    :accessor worker--input
-    :type (or null stream)
+    :initform      nil
+    :accessor      worker--input
+    :type          (or null stream)
     :documentation "The worker's request stream.")
    (output
-    :initform nil
-    :accessor worker--output
-    :type (or null stream)
+    :initform      nil
+    :accessor      worker--output
+    :type          (or null stream)
     :documentation "The worker's response stream.")
    (next-request-id
-    :initform 1
-    :accessor worker--next-request-id
-    :type integer
+    :initform      1
+    :accessor      worker--next-request-id
+    :type          integer
     :documentation "The next protocol request identifier.")
    (lock
-    :initform (make-recursive-lock "SBCL worker")
-    :reader worker--lock
+    :initform      (make-recursive-lock "SBCL worker")
+    :reader        worker--lock
     :documentation "The recursive lock serializing protocol and lifecycle changes."))
   (:documentation "One named persistent, heap-isolated SBCL process."))
 
@@ -72,17 +72,17 @@ project.tests, but a name never consists of periods alone."
              "Invalid SBCL worker name ~S. Use 1 to 80 letters, digits, hyphens, underscores, or periods."
              name)
      :operation :workers
-     :stage :name))
+     :stage     :name))
   name)
 
 (defun worker--create-record
     (environment &key name image-identifier core-pathname)
   "Create a stopped worker record with an already resolved CORE-PATHNAME."
   (make-instance 'sbcl-worker
-                 :environment environment
-                 :name name
+                 :environment      environment
+                 :name             name
                  :image-identifier image-identifier
-                 :core-pathname core-pathname))
+                 :core-pathname    core-pathname))
 
 (defun sbcl-worker-create
     (environment
@@ -100,13 +100,13 @@ project.tests, but a name never consists of periods alone."
        (format nil "SBCL worker image ~A is incompatible with this runtime."
                image-identifier)
        :operation :start
-       :pathname (sbcl-worker-image-manifest-pathname image)
-       :stage :compatibility))
+       :pathname  (sbcl-worker-image-manifest-pathname image)
+       :stage     :compatibility))
     (worker--create-record
      environment
-     :name name
+     :name             name
      :image-identifier image-identifier
-     :core-pathname (and image (sbcl-worker-image-core-pathname image)))))
+     :core-pathname    (and image (sbcl-worker-image-core-pathname image)))))
 
 (defun sbcl-worker-running-p (worker)
   "Return true when WORKER has a live subprocess."
@@ -126,7 +126,7 @@ project.tests, but a name never consists of periods alone."
 (defun worker--handshake-p (worker form)
   "Return true when FORM is the exact expected handshake for WORKER."
   (let* ((environment (worker--environment worker))
-         (properties (and (listp form) (rest form))))
+         (properties  (and (listp form) (rest form))))
     (and properties
          (eq (first form) (worker-environment--protocol-tag environment))
          (= (or (getf properties :version) 0)
@@ -153,27 +153,27 @@ project.tests, but a name never consists of periods alone."
 
 (defclass worker-error-relay ()
   ((forward
-    :initarg :forward
-    :reader worker-error-relay--forward
-    :type stream
+    :initarg       :forward
+    :reader        worker-error-relay--forward
+    :type          stream
     :documentation "The host stream receiving every forwarded line.")
    (lock
-    :initform (make-lock "SBCL worker error relay")
-    :reader worker-error-relay--lock
+    :initform      (make-lock "SBCL worker error relay")
+    :reader        worker-error-relay--lock
     :documentation "The lock guarding the retained boot output.")
    (retained
-    :initform (make-string-output-stream)
-    :accessor worker-error-relay--retained
-    :type (or null stream)
+    :initform      (make-string-output-stream)
+    :accessor      worker-error-relay--retained
+    :type          (or null stream)
     :documentation "The boot error output so far, or NIL once booted.")
    (retained-length
-    :initform 0
-    :accessor worker-error-relay--retained-length
-    :type integer
+    :initform      0
+    :accessor      worker-error-relay--retained-length
+    :type          integer
     :documentation "The characters written to the retained output.")
    (thread
-    :initform nil
-    :accessor worker-error-relay--thread
+    :initform      nil
+    :accessor      worker-error-relay--thread
     :documentation "The thread draining the worker's error stream."))
   (:documentation "The drain of one worker process's error output."))
 
@@ -227,9 +227,9 @@ project.tests, but a name never consists of periods alone."
     (worker--wait-until (lambda () (not (thread-alive-p thread)))))
   (with-lock-held ((worker-error-relay--lock relay))
     (let* ((retained (worker-error-relay--retained relay))
-           (output (and retained
-                        (string-trim '(#\Newline #\Return #\Space)
-                                     (get-output-stream-string retained)))))
+           (output   (and retained
+                          (string-trim '(#\Newline #\Return #\Space)
+                                       (get-output-stream-string retained)))))
       (and output
            (plusp (length output))
            (worker--bounded-string
@@ -266,10 +266,10 @@ status and the error output it wrote while booting."
                     (worker--command worker)
                     :directory
                     (sbcl-worker-environment-working-directory environment)
-                    :input :stream
-                    :output :stream
+                    :input        :stream
+                    :output       :stream
                     :error-output :stream
-                    :wait nil))
+                    :wait         nil))
                  (relay
                    (worker--error-relay-start
                     (uiop:process-info-error-output process)
@@ -282,12 +282,12 @@ status and the error output it wrote while booting."
                        (worker--signal-error
                         (worker--early-exit-message process relay)
                         :operation :start
-                        :stage :handshake))
+                        :stage     :handshake))
                      (let* ((*read-eval* nil)
-                            (form (handler-case
-                                      (read-from-string line)
-                                    (error ()
-                                      nil))))
+                            (form        (handler-case
+                                             (read-from-string line)
+                                           (error ()
+                                             nil))))
                        (when (and (listp form)
                                   (eq (first form)
                                       (worker-environment--protocol-tag
@@ -296,7 +296,7 @@ status and the error output it wrote while booting."
                            (worker--signal-error
                             "The SBCL worker reported the wrong protocol or image identity."
                             :operation :start
-                            :stage :handshake))
+                            :stage     :handshake))
                          (worker--error-relay-booted relay)
                          (return)))))
         (sbcl-worker-error (condition)
@@ -307,8 +307,8 @@ status and the error output it wrote while booting."
           (worker--signal-error
            (format nil "Could not start the SBCL worker: ~A" condition)
            :operation :start
-           :stage :launch
-           :cause condition)))))
+           :stage     :launch
+           :cause     condition)))))
   worker)
 
 (defun worker--cleanup-process (process input output)
@@ -325,8 +325,8 @@ status and the error output it wrote while booting."
 (defun worker--detach-process (worker)
   "Detach WORKER's process state and return its process and protocol streams."
   (let ((process (worker--process worker))
-        (input (worker--input worker))
-        (output (worker--output worker)))
+        (input   (worker--input worker))
+        (output  (worker--output worker)))
     (setf (worker--process worker) nil
           (worker--input worker) nil
           (worker--output worker) nil
@@ -388,7 +388,7 @@ old process reaping or stream cleanup."
                  directory
                  (or (getf properties :message) "unknown worker failure"))
          :operation :change-working-directory
-         :pathname directory))))
+         :pathname  directory))))
   (setf (worker--environment worker) environment)
   worker)
 
@@ -397,18 +397,18 @@ old process reaping or stream cleanup."
 
 (defclass sbcl-worker-pool ()
   ((environment
-    :initarg :environment
-    :accessor sbcl-worker-pool-environment
-    :type sbcl-worker-environment
+    :initarg       :environment
+    :accessor      sbcl-worker-pool-environment
+    :type          sbcl-worker-environment
     :documentation "The paths and settings shared by managed workers.")
    (workers
-    :initform (make-hash-table :test #'equal)
-    :reader worker-pool--workers
-    :type hash-table
+    :initform      (make-hash-table :test #'equal)
+    :reader        worker-pool--workers
+    :type          hash-table
     :documentation "Named workers mapped to their process managers.")
    (lock
-    :initform (make-lock "SBCL worker pool")
-    :reader worker-pool--lock
+    :initform      (make-lock "SBCL worker pool")
+    :reader        worker-pool--lock
     :documentation "The lock serializing creation, reset, and removal."))
   (:documentation "A manager for independent named persistent SBCL workers."))
 
@@ -439,7 +439,7 @@ old process reaping or stream cleanup."
              (worker
                (sbcl-worker-create
                 (sbcl-worker-pool-environment pool)
-                :name name
+                :name             name
                 :image-identifier image-identifier)))
         (setf (gethash name (worker-pool--workers pool)) worker)
         (handler-case
@@ -487,7 +487,7 @@ old process reaping or stream cleanup."
   "Move every worker in POOL to ENVIRONMENT with all-or-rollback semantics."
   (with-lock-held ((worker-pool--lock pool))
     (let ((previous (sbcl-worker-pool-environment pool))
-          (changed nil))
+          (changed  nil))
       (handler-case
           (progn
             (maphash
@@ -557,15 +557,15 @@ old process reaping or stream cleanup."
   (with-recursive-lock-held ((worker--lock worker))
     (sbcl-worker-start worker)
     (let* ((request-id (worker--next-request-id worker))
-           (request (list :request
-                          :id request-id
-                          :operation operation
-                          :arguments arguments)))
+           (request    (list :request
+                             :id request-id
+                             :operation operation
+                             :arguments arguments)))
       (incf (worker--next-request-id worker))
       (handler-case
           (progn
             (let ((*print-readably* t)
-                  (*print-circle* t))
+                  (*print-circle*   t))
               (prin1 request (worker--input worker))
               (terpri (worker--input worker))
               (finish-output (worker--input worker)))
@@ -576,7 +576,7 @@ old process reaping or stream cleanup."
                 (worker--signal-error
                  "The SBCL worker returned an invalid response."
                  :operation operation
-                 :stage :response))
+                 :stage     :response))
               response))
         (sbcl-worker-error (condition)
           (sbcl-worker-stop worker)
@@ -586,17 +586,17 @@ old process reaping or stream cleanup."
           (worker--signal-error
            (format nil "The SBCL worker protocol failed: ~A" condition)
            :operation operation
-           :stage :protocol
-           :cause condition))))))
+           :stage     :protocol
+           :cause     condition))))))
 
 (defun worker--probe-core (environment identifier core-pathname)
   "Boot unpublished CORE-PATHNAME and verify its protocol and identity."
   (let ((probe
           (worker--create-record
            environment
-           :name "image-probe"
+           :name             "image-probe"
            :image-identifier identifier
-           :core-pathname core-pathname)))
+           :core-pathname    core-pathname)))
     (unwind-protect
          (let ((response
                  (sbcl-worker-request probe :eval '(:forms ("(+ 20 22)")))))
@@ -605,8 +605,8 @@ old process reaping or stream cleanup."
              (worker-image--signal-error
               "The unpublished SBCL worker image failed its protocol probe."
               :operation :save-image
-              :pathname core-pathname
-              :stage :probe)))
+              :pathname  core-pathname
+              :stage     :probe)))
       (sbcl-worker-stop probe)))
   nil)
 
@@ -618,24 +618,24 @@ old process reaping or stream cleanup."
     (worker-image--signal-error
      "A saved SBCL worker image needs a non-empty note of at most 4000 characters."
      :operation :save-image
-     :stage :manifest))
+     :stage     :manifest))
   (let* ((directory (worker-image--directory environment identifier))
          (staging
            (sbcl-worker-image-staging-directory environment identifier))
-         (core (merge-pathnames "worker.core" staging)))
+         (core      (merge-pathnames "worker.core" staging)))
     (when (probe-file directory)
       (worker-image--signal-error
        (format nil "SBCL worker image ~A already exists." identifier)
        :operation :save-image
-       :pathname directory
-       :stage :publish))
+       :pathname  directory
+       :stage     :publish))
     (ensure-directories-exist core)
     (unwind-protect
          (let ((response
                  (sbcl-worker-request
                   worker
                   :save-image
-                  (list :pathname (namestring core)
+                  (list :pathname   (namestring core)
                         :identifier identifier))))
            (unless (eq (getf (rest response) :status) :ok)
              (worker-image--signal-error
@@ -644,8 +644,8 @@ old process reaping or stream cleanup."
                       (or (getf (rest response) :message)
                           "unknown worker failure"))
               :operation :save-image
-              :pathname core
-              :stage :save))
+              :pathname  core
+              :stage     :save))
            (let ((restarting-p (getf (rest response) :restarting-p)))
              (when restarting-p
                (worker--await-save-exit worker core))
@@ -653,9 +653,9 @@ old process reaping or stream cleanup."
              (let ((image
                      (worker-image--publish-saved-core
                       environment
-                      :identifier identifier
+                      :identifier        identifier
                       :parent-identifier (sbcl-worker-used-image-identifier worker)
-                      :note note
+                      :note              note
                       :staging-directory staging)))
                (when restarting-p
                  ;; The worker exited to save its heap; it continues from
@@ -665,7 +665,7 @@ old process reaping or stream cleanup."
                image)))
       (when (uiop:directory-exists-p staging)
         (uiop:delete-directory-tree staging
-                                    :validate t
+                                    :validate          t
                                     :if-does-not-exist :ignore)))))
 
 (defun worker--await-save-exit (worker core)
@@ -682,8 +682,8 @@ requires the unpublished core to exist."
     (worker-image--signal-error
      "The SBCL worker exited without saving its image."
      :operation :save-image
-     :pathname core
-     :stage :save))
+     :pathname  core
+     :stage     :save))
   nil)
 
 (defun worker--adopt-image (worker image)
@@ -705,6 +705,7 @@ requires the unpublished core to exist."
         (worker--output worker) nil
         (worker--next-request-id worker) 1)
   nil)
+
 
 ;;;; -- Worker Managers --
 

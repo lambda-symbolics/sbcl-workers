@@ -25,8 +25,8 @@
 
 (defun host-test-configured-runtime ()
   "Exercise callback bootstrap with a non-default evaluation package and protocol."
-  (let* ((root (test-root))
-         (command (test-pristine-command))
+  (let* ((root       (test-root))
+         (command    (test-pristine-command))
          (environment
            (sbcl-worker-environment-create
             :pristine-command
@@ -34,12 +34,12 @@
                     '("(sbcl-workers:sbcl-worker-main :evaluation-package \"SBCL-WORKERS\" :protocol-tag :configured-worker :protocol-version 9 :source-root-environment-variable \"CONFIGURED_SBCL_SOURCE_ROOT\")"))
             :working-directory root :image-root (merge-pathnames "images/" root)
             :evaluation-package "SBCL-WORKERS" :protocol-tag :configured-worker
-            :protocol-version 9
+            :protocol-version                 9
             :source-root-environment-variable "CONFIGURED_SBCL_SOURCE_ROOT"))
-         (worker (sbcl-worker-create environment :name "configured-runtime"))
+         (worker     (sbcl-worker-create environment :name "configured-runtime"))
          (state-form "(list (package-name *package*) *worker-evaluation-package-name* *worker-protocol-tag* *worker-protocol-version* *worker-source-root-environment-variable* *worker-image-identifier*)")
-         (expected '("SBCL-WORKERS" "SBCL-WORKERS" :configured-worker 9
-                     "CONFIGURED_SBCL_SOURCE_ROOT" "configured-image")))
+         (expected   '("SBCL-WORKERS" "SBCL-WORKERS" :configured-worker 9
+                       "CONFIGURED_SBCL_SOURCE_ROOT" "configured-image")))
     (ensure-directories-exist (merge-pathnames "placeholder" root))
     (unwind-protect
          (progn
@@ -66,10 +66,10 @@
 
 (defun host-test-managers ()
   "Exercise callback admission and heap reset through both manager kinds."
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root))
-         (pool (sbcl-worker-pool-create environment))
-         (single (sbcl-worker-create environment :name "single")))
+         (pool        (sbcl-worker-pool-create environment))
+         (single      (sbcl-worker-create environment :name "single")))
     (ensure-directories-exist (merge-pathnames "placeholder" root))
     (unwind-protect
          (dolist (entry (list (list pool "pooled") (list single "single")))
@@ -114,7 +114,7 @@
   "Exercise host callbacks and failure cleanup through persistent subprocesses."
   (let* ((*tests-run* 0) (root (test-root))
          (environment (test-environment root))
-         (worker (sbcl-worker-create environment :name "host-callback-test")))
+         (worker      (sbcl-worker-create environment :name "host-callback-test")))
     (ensure-directories-exist (merge-pathnames "placeholder" root))
     (unwind-protect
          (progn
@@ -288,7 +288,7 @@
                                       (namestring (asdf:system-source-file :sbcl-workers)))
                                "(asdf:load-system :sbcl-workers/host-callbacks)")))
            ;; A wrong host reply must also be rejected in the real worker.
-           (let ((input (sbcl-workers::worker--input worker))
+           (let ((input  (sbcl-workers::worker--input worker))
                  (output (sbcl-workers::worker--output worker)))
              (sbcl-workers::host--write
               '(:request :id 899 :operation :host-request
@@ -304,8 +304,8 @@
                (test-assert (eq (host-test-value (sbcl-workers::host--read output 16384))
                                 :identity) "Worker rejects mismatched reply identity")))
            (let ((process (sbcl-workers::worker--process worker))
-                 (input (sbcl-workers::worker--input worker))
-                 (output (sbcl-workers::worker--output worker)))
+                 (input   (sbcl-workers::worker--input worker))
+                 (output  (sbcl-workers::worker--output worker)))
              (sbcl-workers::host--write
               '(:request :id 900 :operation :host-request
                 :arguments (:session "disconnect" :request-limit 256 :result-limit 256

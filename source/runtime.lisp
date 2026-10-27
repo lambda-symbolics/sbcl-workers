@@ -32,7 +32,7 @@ it once the response announcing the restart has been flushed.")
     (worker--signal-error
      "The SBCL worker runtime configuration is invalid."
      :operation :runtime
-     :stage :configuration))
+     :stage     :configuration))
   (setf *worker-evaluation-package-name* evaluation-package
         *worker-protocol-tag* protocol-tag
         *worker-protocol-version* protocol-version
@@ -45,9 +45,9 @@ it once the response announcing the restart has been flushed.")
   (worker--bounded-string
    (write-to-string value
                     :readably nil
-                    :circle t
-                    :level 10
-                    :length 100)))
+                    :circle   t
+                    :level    10
+                    :length   100)))
 
 (defparameter *worker-output-character-limit* 12000
   "The most captured output characters one worker response carries.")
@@ -65,12 +65,12 @@ only to the protocol transport."
   (let* ((stream (or *worker-capture-stream* (make-string-output-stream)))
          (result-values
            (let ((*standard-output* stream)
-                 (*error-output* stream)
-                 (*trace-output* stream)
-                 (*debug-io* stream)
-                 (*package* (worker--evaluation-package))
-                 (*print-readably* nil)
-                 (*print-circle* nil))
+                 (*error-output*    stream)
+                 (*trace-output*    stream)
+                 (*debug-io*        stream)
+                 (*package*         (worker--evaluation-package))
+                 (*print-readably*  nil)
+                 (*print-circle*    nil))
              (multiple-value-list (funcall function)))))
     (values (mapcar #'sbcl-worker-render-value result-values)
             (worker--captured-output stream))))
@@ -118,7 +118,7 @@ the form count, so a failure response can say which form failed."
 (defun worker--system-source-pathname (system &optional required-p)
   "Return SYSTEM's canonical ASDF definition pathname when it has one."
   (let* ((definition (asdf:find-system system nil))
-         (source (and definition (asdf:system-source-file definition))))
+         (source     (and definition (asdf:system-source-file definition))))
     (cond
       (source
        (truename source))
@@ -145,7 +145,7 @@ the form count, so a failure response can say which form failed."
                  "ASDF resolved system ~A from ~A instead of requested ~A."
                  system actual expected)
          :operation :load-system
-         :pathname expected))
+         :pathname  expected))
       actual)))
 
 (defun worker--load-system (system &optional asd-pathname)
@@ -217,13 +217,13 @@ the form count, so a failure response can say which form failed."
 
 (defun sbcl-worker-handle-request (request)
   "Execute one portable worker REQUEST and return a protocol response."
-  (let ((request-id (getf (rest request) :id))
-        (operation (getf (rest request) :operation))
-        (arguments (getf (rest request) :arguments))
+  (let ((request-id              (getf (rest request) :id))
+        (operation               (getf (rest request) :operation))
+        (arguments               (getf (rest request) :arguments))
         (*worker-capture-stream* (make-string-output-stream))
-        (*print-readably* nil)
-        (signaled nil)
-        (failed-position nil))
+        (*print-readably*        nil)
+        (signaled                nil)
+        (failed-position         nil))
     (handler-case
         (multiple-value-bind (result-values output)
             ;; Record the backtrace where each error is signaled, before any
@@ -247,13 +247,13 @@ the form count, so a failure response can say which form failed."
       (error (condition)
         (append (list :response
                       :id request-id
-                      :status :error
+                      :status         :error
                       :condition-type (string (type-of condition))
-                      :message (worker--condition-message condition)
-                      :output (worker--captured-output *worker-capture-stream*)
-                      :backtrace (if (eq (first signaled) condition)
-                                     (rest signaled)
-                                     (worker--condition-backtrace)))
+                      :message        (worker--condition-message condition)
+                      :output         (worker--captured-output *worker-capture-stream*)
+                      :backtrace      (if (eq (first signaled) condition)
+                                          (rest signaled)
+                                          (worker--condition-backtrace)))
                 (when (and failed-position (eq (first signaled) condition))
                   (list :form-index (first failed-position)
                         :form-count (rest failed-position))))))))
@@ -272,7 +272,7 @@ the form count, so a failure response can say which form failed."
 Only transport printing is readable; requests evaluate with ordinary printer
 settings, so printing a condition or other unreadable object in user code works."
   (let ((*print-readably* t)
-        (*print-circle* t))
+        (*print-circle*   t))
     (prin1 form))
   (terpri)
   (finish-output)
@@ -293,14 +293,14 @@ settings, so printing a condition or other unreadable object in user code works.
          *worker-source-root-environment-variable*))
   "Run the worker's line-oriented readable S-expression protocol until EOF."
   (sbcl-worker-runtime-configure
-   :evaluation-package evaluation-package
-   :protocol-tag protocol-tag
-   :protocol-version protocol-version
+   :evaluation-package               evaluation-package
+   :protocol-tag                     protocol-tag
+   :protocol-version                 protocol-version
    :source-root-environment-variable source-root-environment-variable)
   (let ((*package* (worker--evaluation-package)))
     (worker--write-packet (list *worker-protocol-tag*
                                 :version *worker-protocol-version*
-                                :image *worker-image-identifier*))
+                                :image   *worker-image-identifier*))
     (loop for request = (let ((*read-eval* nil))
                           (read *standard-input* nil :end))
           until (eq request :end)
@@ -309,8 +309,8 @@ settings, so printing a condition or other unreadable object in user code works.
                          (sbcl-worker-handle-request request)
                          (list :response
                                :id nil
-                               :status :error
-                               :message "Malformed worker request."
+                               :status    :error
+                               :message   "Malformed worker request."
                                :backtrace ""))))
                (let ((properties (when (and (consp request)
                                             (eq (first request) :request))

@@ -19,7 +19,7 @@
 
 (defun test-pristine-command ()
   "Return an argv list that boots this checkout's worker runtime."
-  (let* ((asd (asdf:system-source-file :sbcl-workers))
+  (let* ((asd  (asdf:system-source-file :sbcl-workers))
          (root (uiop:pathname-directory-pathname asd)))
     (list "sbcl"
           "--noinform"
@@ -40,20 +40,20 @@
 (defun test-environment (root &key (working-directory root) context)
   "Return a worker environment rooted beneath ROOT."
   (sbcl-worker-environment-create
-   :pristine-command (test-pristine-command)
-   :working-directory working-directory
-   :image-root (merge-pathnames "images/" root)
+   :pristine-command         (test-pristine-command)
+   :working-directory        working-directory
+   :image-root               (merge-pathnames "images/" root)
    :source-revision-function (lambda () "test-revision")
-   :context context))
+   :context                  context))
 
 (defun test-write-sparse-core (pathname)
   "Write a sparse file large enough for saved-core shape validation."
   (ensure-directories-exist pathname)
   (with-open-file (stream pathname
-                          :direction :output
-                          :if-exists :supersede
+                          :direction         :output
+                          :if-exists         :supersede
                           :if-does-not-exist :create
-                          :element-type '(unsigned-byte 8))
+                          :element-type      '(unsigned-byte 8))
     (file-position stream +minimum-sbcl-worker-core-size+)
     (write-byte 0 stream))
   pathname)
@@ -62,10 +62,10 @@
   "Replace PATHNAME with exact UTF-8 CONTENT."
   (ensure-directories-exist pathname)
   (with-open-file (stream pathname
-                          :direction :output
-                          :if-exists :supersede
+                          :direction         :output
+                          :if-exists         :supersede
                           :if-does-not-exist :create
-                          :external-format :utf-8)
+                          :external-format   :utf-8)
     (write-string content stream))
   pathname)
 
@@ -92,7 +92,7 @@
                       (make-string 81 :initial-element #\a)))
     (test-assert (null (sbcl-worker-name-p name))
                  (format nil "~S is not a valid worker name" name)))
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root)))
     (unwind-protect
          (test-assert
@@ -125,82 +125,83 @@
                  "the runtime serializes evaluation conditions")
     (test-assert (stringp (getf (rest failure) :backtrace))
                  "runtime failures include a portable backtrace")))
-  (let ((response
-          (sbcl-worker-handle-request
-           '(:request :id 3 :operation :load-system :arguments (:system :asdf)))))
-    (test-assert
-     (eq (getf (rest response) :status) :ok)
-     "systems without standalone ASD source files still load successfully"))
 
-  (let* ((root (test-root))
-         (old-asd
-           (test-write-source-audit-system
-            (merge-pathnames "old/" root) :old))
-         (new-asd
-           (test-write-source-audit-system
-            (merge-pathnames "new/" root) :new)))
-    (unwind-protect
-         (progn
-           (asdf:load-asd old-asd)
-           (asdf:load-system :sbcl-workers-source-audit)
+(let ((response
+        (sbcl-worker-handle-request
+         '(:request :id 3 :operation :load-system :arguments (:system :asdf)))))
+  (test-assert
+   (eq (getf (rest response) :status) :ok)
+   "systems without standalone ASD source files still load successfully"))
+
+(let* ((root (test-root))
+       (old-asd
+         (test-write-source-audit-system
+          (merge-pathnames "old/" root) :old))
+       (new-asd
+         (test-write-source-audit-system
+          (merge-pathnames "new/" root) :new)))
+  (unwind-protect
+       (progn
+         (asdf:load-asd old-asd)
+         (asdf:load-system :sbcl-workers-source-audit)
+         (test-assert
+          (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :old)
+          "the audit fixture starts from its first registered definition")
+         (let ((response
+                 (sbcl-worker-handle-request
+                  (list :request
+                        :id 4
+                        :operation :load-system
+                        :arguments
+                        (list :system       :sbcl-workers-source-audit
+                              :asd-pathname (namestring new-asd))))))
            (test-assert
-            (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :old)
-            "the audit fixture starts from its first registered definition")
-           (let ((response
-                   (sbcl-worker-handle-request
-                    (list :request
-                          :id 4
-                          :operation :load-system
-                          :arguments
-                          (list :system :sbcl-workers-source-audit
-                                :asd-pathname (namestring new-asd))))))
-             (test-assert
-              (and (eq (getf (rest response) :status) :ok)
-                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
-                   (search (namestring (truename new-asd))
-                           (first (getf (rest response) :values))))
-              "load-system replaces a stale registered system from an exact ASD file"))
-           (asdf:clear-system :sbcl-workers-source-audit)
-           (asdf:load-asd old-asd)
-           (asdf:load-system :sbcl-workers-source-audit)
-           (let ((response
-                   (sbcl-worker-handle-request
-                    (list :request
-                          :id 5
-                          :operation :run-tests
-                          :arguments
-                          (list :system :sbcl-workers-source-audit
-                                :asd-pathname (namestring new-asd))))))
-             (test-assert
-              (and (eq (getf (rest response) :status) :ok)
-                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
-                   (search (namestring (truename new-asd))
-                           (first (getf (rest response) :values))))
-              "run-tests replaces a stale registered system from an exact ASD file"))
-      (asdf:clear-system :sbcl-workers-source-audit)
-      (when (boundp 'cl-user::*sbcl-workers-source-audit*)
-        (makunbound 'cl-user::*sbcl-workers-source-audit*))
-      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
-  nil)
+            (and (eq (getf (rest response) :status) :ok)
+                 (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                 (search (namestring (truename new-asd))
+                         (first (getf (rest response) :values))))
+            "load-system replaces a stale registered system from an exact ASD file"))
+         (asdf:clear-system :sbcl-workers-source-audit)
+         (asdf:load-asd old-asd)
+         (asdf:load-system :sbcl-workers-source-audit)
+         (let ((response
+                 (sbcl-worker-handle-request
+                  (list :request
+                        :id 5
+                        :operation :run-tests
+                        :arguments
+                        (list :system       :sbcl-workers-source-audit
+                              :asd-pathname (namestring new-asd))))))
+           (test-assert
+            (and (eq (getf (rest response) :status) :ok)
+                 (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                 (search (namestring (truename new-asd))
+                         (first (getf (rest response) :values))))
+            "run-tests replaces a stale registered system from an exact ASD file"))
+        (asdf:clear-system :sbcl-workers-source-audit)
+        (when (boundp 'cl-user::*sbcl-workers-source-audit*)
+          (makunbound 'cl-user::*sbcl-workers-source-audit*))
+        (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+ nil)
 
 (defun test-images ()
   "Test immutable manifests, compatibility, scans, and structured errors."
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root))
-         (identifier "instrumented")
-         (directory (merge-pathnames "images/instrumented/" root))
-         (core (merge-pathnames "worker.core" directory)))
+         (identifier  "instrumented")
+         (directory   (merge-pathnames "images/instrumented/" root))
+         (core        (merge-pathnames "worker.core" directory)))
     (unwind-protect
          (progn
            (test-write-sparse-core core)
            (let ((image
                    (sbcl-worker-image-publish-manifest
                     environment
-                    :identifier identifier
+                    :identifier      identifier
                     :parent-identifier
                     +pristine-sbcl-worker-image-identifier+
-                    :note "Carries compiler instrumentation."
-                    :core-pathname core
+                    :note            "Carries compiler instrumentation."
+                    :core-pathname   core
                     :source-revision "abc123")))
              (test-assert
               (string= (sbcl-worker-image-identifier image) identifier)
@@ -216,10 +217,10 @@
                 (progn
                   (sbcl-worker-image-publish-manifest
                    environment
-                   :identifier identifier
+                   :identifier    identifier
                    :parent-identifier
                    +pristine-sbcl-worker-image-identifier+
-                   :note "Duplicate."
+                   :note          "Duplicate."
                    :core-pathname core)
                   nil)
               (sbcl-worker-image-error ()
@@ -237,13 +238,13 @@
 
 (defun test-pool ()
   "Test isolated heaps, persistence, workspace changes, reset, and removal."
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root :context :original))
-         (pool (sbcl-worker-pool-create environment)))
+         (pool        (sbcl-worker-pool-create environment)))
     (ensure-directories-exist (merge-pathnames "marker" root))
     (unwind-protect
          (let* ((alpha (sbcl-worker-pool-start pool "alpha" "pristine"))
-                (beta (sbcl-worker-pool-start pool "beta" "pristine")))
+                (beta  (sbcl-worker-pool-start pool "beta" "pristine")))
            (sbcl-worker-request
             alpha :eval '(:forms ("(defparameter *pool-value* 41)")))
            (test-assert
@@ -282,7 +283,7 @@
              (let ((moved-environment
                      (test-environment root
                                        :working-directory moved
-                                       :context :moved)))
+                                       :context           :moved)))
                (sbcl-worker-pool-change-working-directory
                 pool moved-environment)
                (test-assert
@@ -304,7 +305,7 @@
                    (test-environment
                     root
                     :working-directory (merge-pathnames "missing/" root)
-                    :context :invalid)))
+                    :context           :invalid)))
              (test-assert
               (handler-case
                   (progn
@@ -345,10 +346,10 @@
 
 (defun test-worker-request-cancellation ()
   "Test an interrupted request detaches promptly and restarts from a clean heap."
-  (let* ((root (test-root))
-         (environment (test-environment root))
-         (worker (sbcl-worker-create environment :name "cancel"))
-         (marker (merge-pathnames "request-started" root))
+  (let* ((root           (test-root))
+         (environment    (test-environment root))
+         (worker         (sbcl-worker-create environment :name "cancel"))
+         (marker         (merge-pathnames "request-started" root))
          (request-thread nil))
     (ensure-directories-exist marker)
     (unwind-protect
@@ -400,22 +401,22 @@
 
 (defun test-computed-pristine-command ()
   "Test a pristine command function is consulted at every start and validated."
-  (let* ((root (test-root))
-         (calls 0)
+  (let* ((root   (test-root))
+         (calls  0)
          (environment
            (sbcl-worker-environment-create
-            :pristine-command (lambda ()
-                                (incf calls)
-                                (test-pristine-command))
+            :pristine-command  (lambda ()
+                                 (incf calls)
+                                 (test-pristine-command))
             :working-directory root
-            :image-root (merge-pathnames "images/" root)))
+            :image-root        (merge-pathnames "images/" root)))
          (worker (sbcl-worker-create environment :name "computed"))
          (invalid
            (sbcl-worker-create
             (sbcl-worker-environment-create
-             :pristine-command (lambda () (list "sbcl" ""))
+             :pristine-command  (lambda () (list "sbcl" ""))
              :working-directory root
-             :image-root (merge-pathnames "images/" root))
+             :image-root        (merge-pathnames "images/" root))
             :name "invalid")))
     (ensure-directories-exist root)
     (unwind-protect
@@ -443,7 +444,7 @@
 
 (defun test-form-sequences ()
   "Test several forms are read and evaluated in order and failures name their form."
-  (let* ((root (test-root))
+  (let* ((root   (test-root))
          (worker (sbcl-worker-create (test-environment root) :name "sequences")))
     (ensure-directories-exist root)
     (unwind-protect
@@ -487,7 +488,7 @@
 
 (defun test-request-diagnostics ()
   "Test user code prints freely and failures keep their output and failing frames."
-  (let* ((root (test-root))
+  (let* ((root   (test-root))
          (worker (sbcl-worker-create (test-environment root) :name "diagnostics")))
     (ensure-directories-exist root)
     (unwind-protect
@@ -529,17 +530,17 @@
              "Return the start failure message of a worker running FORM, or NIL."
              (let ((worker (sbcl-worker-create
                             (sbcl-worker-environment-create
-                             :pristine-command (list "sbcl" "--noinform" "--non-interactive"
-                                                     "--no-userinit" "--eval" form)
+                             :pristine-command  (list "sbcl" "--noinform" "--non-interactive"
+                                                      "--no-userinit" "--eval" form)
                              :working-directory root
-                             :image-root (merge-pathnames "images/" root))
+                             :image-root        (merge-pathnames "images/" root))
                             :name "early-exit")))
                (handler-case (progn (sbcl-worker-start worker) nil)
                  (sbcl-worker-error (condition)
                    (and (eq (sbcl-worker-error-stage condition) :handshake)
                         (sbcl-worker-error-message condition)))))))
       (unwind-protect
-           (let ((noisy (start-failure "(progn (format *error-output* \"boot-failure-marker~%\") (sb-ext:exit :code 3 :abort t))"))
+           (let ((noisy  (start-failure "(progn (format *error-output* \"boot-failure-marker~%\") (sb-ext:exit :code 3 :abort t))"))
                  (silent (start-failure "(sb-ext:exit :code 4 :abort t)")))
              (test-assert (and noisy
                                (search "exit status 3" noisy)
@@ -554,9 +555,9 @@
 
 (defun test-image-snapshot ()
   "Test forked heap saving, probing, publication, and independent cloning."
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root))
-         (pool (sbcl-worker-pool-create environment)))
+         (pool        (sbcl-worker-pool-create environment)))
     (ensure-directories-exist (merge-pathnames "marker" root))
     (unwind-protect
          (let ((source (sbcl-worker-pool-start pool "source" "pristine")))
@@ -567,7 +568,7 @@
                    (sbcl-worker-save-image
                     environment source
                     :identifier "diddled"
-                    :note "Carries a marker proving that the heap was retained.")))
+                    :note       "Carries a marker proving that the heap was retained.")))
              (test-assert
               (and (string= (sbcl-worker-image-identifier image) "diddled")
                    (sbcl-worker-image-plausible-core-p
@@ -632,12 +633,12 @@
 
 (defun test-source-recorded-project-file ()
   "Read a loaded definition from its recorded file without any matching SBCL source."
-  (let* ((root (test-root))
+  (let* ((root   (test-root))
          (source (merge-pathnames "recorded-definition.lisp" root)))
     (test-write-text
      source
      (format nil "(in-package :cl-user)~%(defun sbcl-workers-recorded-definition (x)~%  (list :recorded x))~%"))
-    (let ((*error-output* (make-broadcast-stream))
+    (let ((*error-output*    (make-broadcast-stream))
           (*standard-output* (make-broadcast-stream)))
       (load (compile-file source
                           :output-file (merge-pathnames "recorded-definition.fasl" root))))
@@ -652,10 +653,10 @@
 
 (defun test-worker-managers ()
   "Test one manager protocol over a pool, a single worker, and no manager."
-  (let* ((root (test-root))
+  (let* ((root        (test-root))
          (environment (test-environment root))
-         (pool (sbcl-worker-pool-create environment))
-         (single (sbcl-worker-create environment :name "single")))
+         (pool        (sbcl-worker-pool-create environment))
+         (single      (sbcl-worker-create environment :name "single")))
     (ensure-directories-exist root)
     (flet ((refused-p (function)
              "Return true when FUNCTION signals a worker error."

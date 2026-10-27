@@ -19,7 +19,7 @@
     (worker--signal-error
      "The unpublished SBCL worker core already exists."
      :operation :save-image
-     :pathname pathname))
+     :pathname  pathname))
   (setf *worker-pending-save*
         (lambda ()
           (handler-case
@@ -27,9 +27,9 @@
                 (setf *worker-image-identifier* identifier)
                 (sb-ext:save-lisp-and-die
                  (namestring pathname)
-                 :toplevel #'sbcl-worker-main
-                 :executable nil
-                 :purify nil
+                 :toplevel    #'sbcl-worker-main
+                 :executable  nil
+                 :purify      nil
                  :compression nil))
             (error ()
               (sb-ext:exit :code 1 :abort t)))))

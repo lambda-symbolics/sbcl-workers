@@ -12,9 +12,9 @@
         (setf *worker-image-identifier* identifier)
         (sb-ext:save-lisp-and-die
          (namestring pathname)
-         :toplevel #'sbcl-worker-main
-         :executable nil
-         :purify nil
+         :toplevel    #'sbcl-worker-main
+         :executable  nil
+         :purify      nil
          :compression nil))
     (error ()
       (sb-posix:_exit 1)))
@@ -30,7 +30,7 @@
     (worker--signal-error
      "The unpublished SBCL worker core already exists."
      :operation :save-image
-     :pathname pathname))
+     :pathname  pathname))
   (let ((saver-pid (sb-posix:fork)))
     (if (zerop saver-pid)
         (worker--save-image-child pathname identifier)
@@ -42,5 +42,5 @@
             (worker--signal-error
              "The SBCL worker image saver failed."
              :operation :save-image
-             :pathname pathname)))))
+             :pathname  pathname)))))
   (values (list (namestring pathname)) ""))
