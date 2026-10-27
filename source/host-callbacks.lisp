@@ -43,9 +43,12 @@
                       (stringp object) (rationalp object))
                   t)
                  ((typep object '(or single-float double-float))
-                  (and (ignore-errors
-                        (<= (- most-positive-double-float) object
-                            most-positive-double-float)) t))
+                  (handler-case
+                      (and (<= (- most-positive-double-float) object
+                               most-positive-double-float)
+                           t)
+                    (arithmetic-error ()
+                      nil)))
                  ((consp object)
                   (let ((marked nil) (tail object))
                     (unwind-protect
