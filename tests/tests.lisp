@@ -126,63 +126,67 @@
     (test-assert (stringp (getf (rest failure) :backtrace))
                  "runtime failures include a portable backtrace")))
 
-(let ((response
-        (sbcl-worker-handle-request
-         '(:request :id 3 :operation :load-system :arguments (:system :asdf)))))
-  (test-assert
-   (eq (getf (rest response) :status) :ok)
-   "systems without standalone ASD source files still load successfully"))
+(defun test-load-system-without-asd ()
+  "Test loading a system that has no standalone ASD source file."
+  (let ((response
+          (sbcl-worker-handle-request
+           '(:request :id 3 :operation :load-system :arguments (:system :asdf)))))
+    (test-assert
+     (eq (getf (rest response) :status) :ok)
+     "systems without standalone ASD source files still load successfully")))
 
-(let* ((root (test-root))
-       (old-asd
-         (test-write-source-audit-system
-          (merge-pathnames "old/" root) :old))
-       (new-asd
-         (test-write-source-audit-system
-          (merge-pathnames "new/" root) :new)))
-  (unwind-protect
-       (progn
-         (asdf:load-asd old-asd)
-         (asdf:load-system :sbcl-workers-source-audit)
-         (test-assert
-          (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :old)
-          "the audit fixture starts from its first registered definition")
-         (let ((response
-                 (sbcl-worker-handle-request
-                  (list :request
-                        :id 4
-                        :operation :load-system
-                        :arguments
-                        (list :system       :sbcl-workers-source-audit
-                              :asd-pathname (namestring new-asd))))))
+(defun test-load-system-replaces-stale-definition ()
+  "Test that loading and testing a system use its exact ASD file over a stale one."
+  (let* ((root (test-root))
+         (old-asd
+           (test-write-source-audit-system
+            (merge-pathnames "old/" root) :old))
+         (new-asd
+           (test-write-source-audit-system
+            (merge-pathnames "new/" root) :new)))
+    (unwind-protect
+         (progn
+           (asdf:load-asd old-asd)
+           (asdf:load-system :sbcl-workers-source-audit)
            (test-assert
-            (and (eq (getf (rest response) :status) :ok)
-                 (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
-                 (search (namestring (truename new-asd))
-                         (first (getf (rest response) :values))))
-            "load-system replaces a stale registered system from an exact ASD file"))
-         (asdf:clear-system :sbcl-workers-source-audit)
-         (asdf:load-asd old-asd)
-         (asdf:load-system :sbcl-workers-source-audit)
-         (let ((response
-                 (sbcl-worker-handle-request
-                  (list :request
-                        :id 5
-                        :operation :run-tests
-                        :arguments
-                        (list :system       :sbcl-workers-source-audit
-                              :asd-pathname (namestring new-asd))))))
-           (test-assert
-            (and (eq (getf (rest response) :status) :ok)
-                 (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
-                 (search (namestring (truename new-asd))
-                         (first (getf (rest response) :values))))
-            "run-tests replaces a stale registered system from an exact ASD file"))
-        (asdf:clear-system :sbcl-workers-source-audit)
-        (when (boundp 'cl-user::*sbcl-workers-source-audit*)
-          (makunbound 'cl-user::*sbcl-workers-source-audit*))
-        (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
- nil)
+            (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :old)
+            "the audit fixture starts from its first registered definition")
+           (let ((response
+                   (sbcl-worker-handle-request
+                    (list :request
+                          :id 4
+                          :operation :load-system
+                          :arguments
+                          (list :system       :sbcl-workers-source-audit
+                                :asd-pathname (namestring new-asd))))))
+             (test-assert
+              (and (eq (getf (rest response) :status) :ok)
+                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                   (search (namestring (truename new-asd))
+                           (first (getf (rest response) :values))))
+              "load-system replaces a stale registered system from an exact ASD file"))
+           (asdf:clear-system :sbcl-workers-source-audit)
+           (asdf:load-asd old-asd)
+           (asdf:load-system :sbcl-workers-source-audit)
+           (let ((response
+                   (sbcl-worker-handle-request
+                    (list :request
+                          :id 5
+                          :operation :run-tests
+                          :arguments
+                          (list :system       :sbcl-workers-source-audit
+                                :asd-pathname (namestring new-asd))))))
+             (test-assert
+              (and (eq (getf (rest response) :status) :ok)
+                   (eq (symbol-value 'cl-user::*sbcl-workers-source-audit*) :new)
+                   (search (namestring (truename new-asd))
+                           (first (getf (rest response) :values))))
+              "run-tests replaces a stale registered system from an exact ASD file"))
+          (asdf:clear-system :sbcl-workers-source-audit)
+          (when (boundp 'cl-user::*sbcl-workers-source-audit*)
+            (makunbound 'cl-user::*sbcl-workers-source-audit*))
+          (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
+    nil))
 
 (defun test-images ()
   "Test immutable manifests, compatibility, scans, and structured errors."
@@ -695,6 +699,8 @@
   (test-source-recorded-project-file)
   (test-worker-names)
   (test-runtime)
+  (test-load-system-without-asd)
+  (test-load-system-replaces-stale-definition)
   (test-output-bounds)
   (test-images)
   (test-pool)
