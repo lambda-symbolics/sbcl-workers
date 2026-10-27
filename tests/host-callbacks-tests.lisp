@@ -49,14 +49,13 @@
             (equal (host-test-value (sbcl-worker-request worker :eval
                                                         (list :forms (list state-form)))) expected)
             "Configured runtime before optional bootstrap")
-           (dotimes (index 2)
-             (declare (ignore index))
-             (test-assert
-              (equal (host-test-value
-                      (host-test-eval
-                       worker (format nil "(progn (sbcl-worker-host-call :configured) ~A)" state-form)
-                       #'host-test-dispatch)) expected)
-              "Callback bootstrap preserves configured package, protocol and image identity"))
+           (loop repeat 2
+                 do (test-assert
+                     (equal (host-test-value
+                             (host-test-eval
+                              worker (format nil "(progn (sbcl-worker-host-call :configured) ~A)" state-form)
+                              #'host-test-dispatch)) expected)
+                     "Callback bootstrap preserves configured package, protocol and image identity"))
            (test-assert
             (equal (host-test-value (sbcl-worker-request worker :eval
                                                         (list :forms (list state-form)))) expected)
