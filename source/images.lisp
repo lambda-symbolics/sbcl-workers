@@ -3,10 +3,10 @@
 (defparameter +pristine-sbcl-worker-image-identifier+ "pristine"
   "The reserved virtual base used for fresh SBCL workers.")
 
-(defconstant +sbcl-worker-image-manifest-version+ 1
+(defparameter +sbcl-worker-image-manifest-version+ 1
   "The current immutable worker-image manifest version.")
 
-(defconstant +minimum-sbcl-worker-core-size+ 1048576
+(defparameter +minimum-sbcl-worker-core-size+ 1048576
   "The smallest plausible saved SBCL core in bytes.")
 
 (defclass sbcl-worker-image ()
