@@ -22,12 +22,16 @@
          :message (format nil "Worker host callback failed: ~A" code)))
 
 (defclass host-bounded-output (trivial-gray-streams:fundamental-character-output-stream)
-  ((stream :initform (make-string-output-stream) :reader host-output--stream)
-   (limit :initarg :limit :reader host-output--limit)
-   (count :initform 0 :accessor host-output--count))
+  ((stream :initform (make-string-output-stream) :reader host-output--stream
+           :documentation "The string stream that collects the printed text.")
+   (limit :initarg :limit :reader host-output--limit
+          :documentation "The most characters the stream accepts.")
+   (count :initform 0 :accessor host-output--count
+          :documentation "The number of characters written so far."))
   (:documentation "A readable printer sink which refuses excess allocation."))
 
 (defmethod trivial-gray-streams:stream-write-char ((stream host-bounded-output) char)
+  "Write CHAR, or signal a bound failure when STREAM is full."
   (when (> (incf (host-output--count stream)) (host-output--limit stream))
     (host--fail :bound))
   (write-char char (host-output--stream stream)))
@@ -87,17 +91,26 @@
     (get-output-stream-string (host-output--stream stream))))
 
 (defclass host-bounded-input (trivial-gray-streams:fundamental-character-input-stream)
-  ((stream :initarg :stream :reader host-input--stream)
-   (limit :initarg :limit :reader host-input--limit)
-   (poll :initarg :poll :initform nil :reader host-input--poll)
-   (count :initform 0 :accessor host-input--count)
-   (depth :initform 0 :accessor host-input--depth)
-   (quoted :initform nil :accessor host-input--quoted)
-   (escaped :initform nil :accessor host-input--escaped)
-   (previous :initform nil :accessor host-input--previous))
+  ((stream :initarg :stream :reader host-input--stream
+           :documentation "The underlying stream that supplies characters.")
+   (limit :initarg :limit :reader host-input--limit
+          :documentation "The most characters the reader may consume.")
+   (poll :initarg :poll :initform nil :reader host-input--poll
+         :documentation "A function called while waiting for input, or NIL.")
+   (count :initform 0 :accessor host-input--count
+          :documentation "The number of characters read so far.")
+   (depth :initform 0 :accessor host-input--depth
+          :documentation "The current list nesting depth.")
+   (quoted :initform nil :accessor host-input--quoted
+           :documentation "The open string or symbol quote character, or NIL.")
+   (escaped :initform nil :accessor host-input--escaped
+            :documentation "True after a backslash escape.")
+   (previous :initform nil :accessor host-input--previous
+             :documentation "The depth, quote and escape state before the last character."))
   (:documentation "A bounded reader with optional supervised polling."))
 
 (defmethod trivial-gray-streams:stream-read-char ((stream host-bounded-input))
+  "Read one character, tracking nesting and failing past the size or depth bound."
   (let ((input (host-input--stream stream)) (poll (host-input--poll stream)))
     (when poll
       (loop until (listen input) do (funcall poll) (sleep 0.01))
@@ -127,6 +140,7 @@
       char)))
 
 (defmethod trivial-gray-streams:stream-unread-char ((stream host-bounded-input) char)
+  "Unread CHAR and restore the state from before it was read."
   (decf (host-input--count stream))
   (setf (host-input--depth stream) (first (host-input--previous stream))
         (host-input--quoted stream) (second (host-input--previous stream))
@@ -209,12 +223,14 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                       (getf (rest reply) :remote-type))))))
 
 (defmethod worker--invoke-request ((operation (eql :host-request)) arguments request-id)
+  "Run the wrapped operation with host calls available to it."
   (let ((*host-runtime* (append (list :input *standard-input* :output *standard-output*
                                     :request-id request-id) arguments))
         (*host-runtime-call-id* 0) (*host-runtime-in-call* nil))
     (worker--dispatch (getf arguments :operation) (getf arguments :arguments))))
 
 (defmethod worker--request-allowed :before ((worker sbcl-worker))
+  "Refuse a request to WORKER while it is dispatching a host call."
   (with-lock-held (*host-registry-lock*)
     (when (gethash worker *host-active-workers*) (host--fail :reentrancy))))
 
@@ -225,6 +241,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
   (unless (sbcl-worker-running-p worker) (host--fail :worker-dead)))
 
 (defmethod worker--emit-response ((operation (eql :host-request)) arguments response)
+  "Write RESPONSE within the result limit, or an error response when it does not fit or is not portable."
   (handler-case
       (host--write response *standard-output* (+ 4096 (getf arguments :result-limit)))
     (sbcl-worker-host-error (condition)
@@ -280,6 +297,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
       (with-lock-held (*host-registry-lock*) (remhash worker *host-active-workers*)))))
 
 (defmethod worker--read-response :around ((worker sbcl-worker) request-id)
+  "Answer WORKER's host calls during a host request until its response arrives."
   (unless (and *host-session* (eq worker (getf *host-session* :worker)))
     (return-from worker--read-response (call-next-method)))
   (let ((session *host-session*) (call-id 0))
