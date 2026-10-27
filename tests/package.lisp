@@ -1,4 +1,5 @@
 (defpackage #:sbcl-workers/tests
+  (:documentation "Tests for sbcl-workers.")
   (:use #:cl)
   (:import-from #:sbcl-workers
                 #:+minimum-sbcl-worker-core-size+

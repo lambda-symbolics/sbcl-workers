@@ -1,4 +1,5 @@
 (defpackage #:sbcl-workers
+  (:documentation "Persistent SBCL worker processes, worker pools, and saved worker images.")
   (:use #:cl)
   (:import-from #:bordeaux-threads
                 #:make-lock
