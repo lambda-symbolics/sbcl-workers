@@ -233,7 +233,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
                         :message        (sbcl-worker-error-message condition))
                    *standard-output* 4096))))
 
-(defun host--dispatch (worker payload identity session)
+(defun host--dispatch (worker payload &key identity session)
   "Run one supervised dispatcher, stopping it if cancellation or worker death occurs."
   (let ((thread nil) (done nil) (result nil) (failure nil)
         (lock (make-lock "Host dispatch completion")) (cancelled nil))
@@ -296,7 +296,7 @@ threads are rejected. Host EOF raises a typed disconnected condition."
           (host--encode payload (getf session :request-limit))
           (let ((reply
                   (handler-case
-                      (let ((value (host--dispatch worker payload identity session)))
+                      (let ((value (host--dispatch worker payload :identity identity :session session)))
                         (host--encode value (getf session :result-limit))
                         (list :host-result :identity identity :status :ok :value value))
                     (error (condition)
