@@ -267,7 +267,7 @@
     (sbcl-worker-image-load environment identifier)))
 
 (defun worker-image--valid-manifest-p
-    (form properties identifier directory core sole-form-p)
+    (form properties &key identifier directory core sole-form-p)
   "Return true when parsed image manifest data satisfies every invariant."
   (and sole-form-p
        (listp form)
@@ -307,8 +307,11 @@
                  (core-value (and properties (getf properties :core)))
                  (core       (and (worker--non-empty-string-p core-value)
                                   (pathname core-value))))
-            (unless (worker-image--valid-manifest-p
-                     form properties identifier directory core sole-form-p)
+            (unless (worker-image--valid-manifest-p form properties
+                                                    :identifier  identifier
+                                                    :directory   directory
+                                                    :core        core
+                                                    :sole-form-p sole-form-p)
               (worker-image--signal-error
                (format nil "Invalid SBCL worker image manifest at ~A." manifest)
                :operation :images
