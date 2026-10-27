@@ -7,7 +7,7 @@
   :depends-on  (#:bordeaux-threads
                 #:ls-compat/posix
                 #:sexp-store
-                #+sbcl #:sb-posix)
+                (:feature :sbcl #:sb-posix))
   :components  ((:module     "source"
                  :serial     t
                  :components ((:file "package")
