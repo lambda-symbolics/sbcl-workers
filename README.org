@@ -8,6 +8,10 @@ directories, and can be reset independently.
 Process separation is a reliability boundary. Evaluated forms have the user's
 privileges.
 
+The canonical package declares the optional host callback API exports. Load
+=sbcl-workers/host-callbacks= before calling that API; loading it does not
+change package exports, so reloading the base package is safe.
+
 * Environment and pool
 
 The host supplies the command that starts a pristine protocol runtime. This

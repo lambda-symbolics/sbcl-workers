@@ -109,6 +109,18 @@
       (sbcl-worker-manager-stop single)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
 
+(defun host-test-package-reload ()
+  "Keep the canonical package idempotent after loading host callbacks."
+  (handler-bind ((warning #'error))
+    (load (asdf:system-relative-pathname "sbcl-workers" "source/package.lisp")
+          :verbose nil :print nil))
+  (dolist (name '("SBCL-WORKER-HOST-REQUEST" "SBCL-WORKER-HOST-CALL"
+                  "SBCL-WORKER-HOST-CONTEXT" "SBCL-WORKER-HOST-ERROR"
+                  "SBCL-WORKER-HOST-ERROR-CODE" "SBCL-WORKER-HOST-ERROR-IDENTITY"
+                  "SBCL-WORKER-HOST-ERROR-REMOTE-TYPE"))
+    (test-assert (eq (nth-value 1 (find-symbol name "SBCL-WORKERS")) :external)
+                 "Host callback API stays exported after package reload")))
+
 (defun run-host-callback-tests ()
   "Exercise host callbacks and failure cleanup through persistent subprocesses."
   (let* ((*tests-run* 0) (root (test-root))
@@ -117,6 +129,7 @@
     (ensure-directories-exist (merge-pathnames "placeholder" root))
     (unwind-protect
          (progn
+           (host-test-package-reload)
            (host-test-managers)
            (sbcl-worker-start worker)
            (sbcl-workers::host--write :malformed (sbcl-workers::worker--input worker) 256)
