@@ -1,10 +1,5 @@
 (in-package #:sbcl-workers)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (export '(sbcl-worker-host-request sbcl-worker-host-call sbcl-worker-host-context
-            sbcl-worker-host-error sbcl-worker-host-error-code
-            sbcl-worker-host-error-identity sbcl-worker-host-error-remote-type)))
-
 (define-condition sbcl-worker-host-error (sbcl-worker-error)
   ((code :initarg :code :reader sbcl-worker-host-error-code
          :documentation "Machine-readable callback failure classification.")

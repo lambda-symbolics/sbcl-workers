@@ -30,6 +30,13 @@
            #:sbcl-worker-error-pathname
            #:sbcl-worker-error-stage
            #:sbcl-worker-handle-request
+           #:sbcl-worker-host-request
+           #:sbcl-worker-host-call
+           #:sbcl-worker-host-context
+           #:sbcl-worker-host-error
+           #:sbcl-worker-host-error-code
+           #:sbcl-worker-host-error-identity
+           #:sbcl-worker-host-error-remote-type
            #:sbcl-worker-image
            #:sbcl-worker-image-architecture
            #:sbcl-worker-image-compatible-p
